@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title or "Vertrag anlegen" }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Vertrag</p>
+    <h1>{{ form_title or "Vertrag anlegen" }}</h1>
+  </div>
+  <a class="button subtle" href="{{ cancel_url or '/contracts' }}">Zurueck</a>
+</section>
+
+{% if error %}
+<p class="alert">{{ error }}</p>
+{% endif %}
+
+<form class="form-grid sectioned-form" method="post" action="{{ form_action }}" enctype="multipart/form-data">
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Zuordnung und Laufzeit</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Unternehmen <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <select name="company_id" required data-contract-company>
+          {% for company in companies %}
+          <option value="{{ company.id }}"
+            data-contact-name="{{ company.contact_name or '' }}"
+            data-contact-email="{{ company.contact_email or '' }}"
+            data-contact-phone="{{ company.contact_phone or '' }}"
+            data-billing-recipient-name="{{ company.billing_recipient_name or '' }}"
+            data-billing-recipient-email="{{ company.billing_recipient_email or '' }}"
+            data-billing-recipient-phone="{{ company.billing_recipient_phone or '' }}"
+            {% if form.company_id == company.id %}selected{% endif %}>{{ company.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Vertragsnummer <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="contract_number" value="{{ form.contract_number or '' }}" required data-contract-number>
+      </label>
+      <label>
+        <span>Titel <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="title" value="{{ form.title or '' }}" required data-contract-title>
+      </label>
+      <label>
+        <span>Status</span>
+        <select name="status">
+          <option value="active" {% if form.status == 'active' %}selected{% endif %}>Aktiv</option>
+          <option value="draft" {% if form.status == 'draft' %}selected{% endif %}>Entwurf</option>
+          <option value="paused" {% if form.status == 'paused' %}selected{% endif %}>Pausiert</option>
+          <option value="ended" {% if form.status == 'ended' %}selected{% endif %}>Beendet</option>
+        </select>
+      </label>
+      <label>
+        <span>Start <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="start_date" type="date" value="{{ form.start_date }}" required>
+      </label>
+      <label>
+        <span>Ende</span>
+        <input name="end_date" type="date" value="{{ form.end_date or '' }}">
+      </label>
+    </div>
+  </section>
+
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Kaufmaennische Referenzen</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Waehrung <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="currency" maxlength="3" value="{{ form.currency or 'EUR' }}" required>
+      </label>
+      <label>
+        <span>Bestellnummer Kunde</span>
+        <input name="customer_order_number" value="{{ form.customer_order_number or '' }}">
+      </label>
+      <label>
+        <span>ERP-Referenznummer</span>
+        <input name="erp_reference_number" value="{{ form.erp_reference_number or '' }}">
+      </label>
+    </div>
+  </section>
+
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Abrechnungsdefaults</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Lizenz-Abrechnung</span>
+        <select name="license_billing_frequency">
+          {% for key, item in billing_frequencies.items() %}
+          <option value="{{ key }}" {% if form.license_billing_frequency == key %}selected{% endif %}>{{ item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Dienstleistungs-Abrechnung</span>
+        <select name="service_billing_frequency">
+          {% for key, item in billing_frequencies.items() %}
+          <option value="{{ key }}" {% if form.service_billing_frequency == key %}selected{% endif %}>{{ item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Variable Kostensaetze</span>
+        <select name="variable_billing_frequency">
+          {% for key, item in billing_frequencies.items() %}
+          <option value="{{ key }}" {% if form.variable_billing_frequency == key %}selected{% endif %}>{{ item.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Standard-{{ rate_unit_label }} <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="service_hourly_rate" inputmode="decimal" value="{{ form.service_hourly_rate or '0,00' }}" required>
+      </label>
+      <label>
+        <span>Preissteigerung Lizenzkosten ab 2. Jahr (%) <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="license_price_increase_percent" inputmode="decimal" value="{{ form.license_price_increase_percent or '8' }}" required>
+      </label>
+      <label>
+        <span>Umsatzsteuer <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <select name="vat_treatment" required>
+          {% for key, label in vat_treatments.items() %}
+          <option value="{{ key }}" {% if form.vat_treatment == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Ansprechpartner Vertrag</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Name <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="contact_name" value="{{ form.contact_name or '' }}" required data-company-fill="contactName">
+      </label>
+      <label>
+        <span>E-Mail <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="contact_email" type="email" value="{{ form.contact_email or '' }}" required data-company-fill="contactEmail">
+      </label>
+      <label>
+        <span>Telefonnummer <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="contact_phone" value="{{ form.contact_phone or '' }}" required data-company-fill="contactPhone">
+      </label>
+    </div>
+  </section>
+
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Rechnungsempfaenger Vertrag</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Name <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="billing_recipient_name" value="{{ form.billing_recipient_name or '' }}" required data-company-fill="billingRecipientName">
+      </label>
+      <label>
+        <span>E-Mail <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="billing_recipient_email" type="email" value="{{ form.billing_recipient_email or '' }}" required data-company-fill="billingRecipientEmail">
+      </label>
+      <label>
+        <span>Telefonnummer <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="billing_recipient_phone" value="{{ form.billing_recipient_phone or '' }}" required data-company-fill="billingRecipientPhone">
+      </label>
+    </div>
+  </section>
+
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Dokumente und Notizen</h2>
+    <div class="form-section-grid two-column-section">
+      <label>
+        <span>Vertrags-PDF</span>
+        <input name="document" type="file" accept=".pdf">
+        {% if form.original_filename %}
+        <small>Aktuelles Dokument: <a href="/contracts/{{ form.id }}/document">{{ form.original_filename }}</a>. Ein neuer Upload ersetzt es.</small>
+        {% endif %}
+      </label>
+      <label>
+        <span>Notizen</span>
+        <textarea name="notes" rows="4">{{ form.notes or '' }}</textarea>
+      </label>
+    </div>
+  </section>
+
+  <div class="form-actions span-full">
+    <a class="button subtle" href="{{ cancel_url or '/contracts' }}">Abbrechen</a>
+    <button class="button primary" type="submit">Speichern</button>
+  </div>
+</form>
+<script>
+  (function () {
+    var company = document.querySelector("[data-contract-company]");
+    var number = document.querySelector("[data-contract-number]");
+    var title = document.querySelector("[data-contract-title]");
+    var lastGenerated = "";
+    var fillFields = Array.prototype.slice.call(document.querySelectorAll("[data-company-fill]"));
+    function selectedCompanyName() {
+      if (!company || company.selectedIndex < 0) {
+        return "";
+      }
+      return company.options[company.selectedIndex].text.trim();
+    }
+    function selectedCompanyOption() {
+      if (!company || company.selectedIndex < 0) {
+        return null;
+      }
+      return company.options[company.selectedIndex];
+    }
+    function updateTitle() {
+      var companyName = selectedCompanyName();
+      var contractNumber = number ? number.value.trim() : "";
+      var nextTitle = companyName && contractNumber ? companyName + " - " + contractNumber : "";
+      if (!title || !nextTitle) {
+        return;
+      }
+      if (!title.value.trim() || title.value === lastGenerated) {
+        title.value = nextTitle;
+        lastGenerated = nextTitle;
+      }
+    }
+    function fillCompanyFields(force) {
+      var option = selectedCompanyOption();
+      if (!option) {
+        return;
+      }
+      fillFields.forEach(function (field) {
+        var key = field.dataset.companyFill;
+        var value = option.dataset[key] || "";
+        if (force || !field.value.trim()) {
+          field.value = value;
+        }
+      });
+    }
+    if (company && number && title) {
+      company.addEventListener("change", function () {
+        updateTitle();
+        fillCompanyFields(true);
+      });
+      number.addEventListener("input", updateTitle);
+      updateTitle();
+      fillCompanyFields(false);
+    }
+  })();
+</script>
+{% endblock %}

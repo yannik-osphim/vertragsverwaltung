@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Stundenbuchung bearbeiten - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">{{ entry.user_name }}</p>
+    <h1>Stundenbuchung bearbeiten</h1>
+  </div>
+  <a class="button subtle" href="{{ cancel_url }}">Zurueck</a>
+</section>
+
+{% if error %}
+<p class="alert">{{ error }}</p>
+{% endif %}
+
+{% if locked %}
+<p class="alert">Diese Stundenbuchung ist bereits einer Rechnung zugeordnet und kann nicht bearbeitet werden.</p>
+<div class="form-actions">
+  <a class="button subtle" href="{{ cancel_url }}">Zurueck</a>
+</div>
+{% else %}
+<form class="form-grid" method="post" action="{{ form_action }}">
+  <label>
+    <span>Vertrag</span>
+    <select name="contract_id" required>
+      {% for contract in contracts %}
+      <option value="{{ contract.id }}" {% if entry.contract_id == contract.id %}selected{% endif %}>{{ contract.company_name }} - {{ contract.contract_number }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Leistung</span>
+    <select name="work_item_key" data-filter-contract-select="contract_id" required>
+      {% for item in work_items %}
+      <option value="{{ item.key }}" data-contract-id="{{ item.contract_id }}" {% if entry.work_item_key == item.key %}selected{% endif %}>{{ item.company_name }} - {{ item.contract_number }} - {{ item.label }}: {{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Startdatum</span>
+    <input name="start_date" type="date" value="{{ entry.start_date or entry.work_date }}" required>
+  </label>
+  <label>
+    <span>Enddatum</span>
+    <input name="end_date" type="date" value="{{ entry.end_date or entry.work_date }}" required>
+  </label>
+  <label>
+    <span>{{ work_unit_label }}</span>
+    <input name="hours" inputmode="decimal" value="{{ entry.hours | work_amount_input }}" required>
+  </label>
+  <label>
+    <span>Status</span>
+    <select name="status">
+      {% for item_status in time_entry_statuses %}
+      <option value="{{ item_status }}" {% if entry.status == item_status %}selected{% endif %}>{{ item_status | status_label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="span-2">
+    <span>Beschreibung</span>
+    <textarea name="description" rows="4">{{ entry.description or '' }}</textarea>
+  </label>
+  <div class="form-actions span-2">
+    <a class="button subtle" href="{{ cancel_url }}">Abbrechen</a>
+    <button class="button primary" type="submit">Speichern</button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

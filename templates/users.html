@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Benutzer - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Security</p>
+    <h1>Benutzer & Rollen</h1>
+  </div>
+</section>
+
+{% if error %}
+<div class="flash error">{{ error }}</div>
+{% endif %}
+
+{% if generated_password %}
+<section class="analytics-band generated-secret">
+  <div class="section-title">
+    <h2>Generiertes Passwort</h2>
+    <span class="muted">{{ generated_password.message }}</span>
+  </div>
+  <dl class="detail-grid">
+    <div><dt>Benutzer</dt><dd>{{ generated_password.username }}</dd></div>
+    <div class="span-2">
+      <dt>Passwort</dt>
+      <dd><code class="secret-value">{{ generated_password.password }}</code></dd>
+    </div>
+  </dl>
+</section>
+{% endif %}
+
+<form class="form-grid" method="post" action="/users">
+  <label>
+    <span>Benutzername</span>
+    <input name="username" required>
+  </label>
+  <label>
+    <span>Name</span>
+    <input name="full_name" required>
+  </label>
+  <label>
+    <span>E-Mail</span>
+    <input name="email" type="email">
+  </label>
+  <label>
+    <span>Rolle</span>
+    <select name="role_id">
+      {% for role in roles %}
+      <option value="{{ role.id }}">{{ role.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="field-hint span-2">Beim Speichern wird automatisch ein zufaelliges 64-Zeichen-Passwort generiert und einmalig angezeigt.</p>
+  <div class="form-actions span-2">
+    <button class="button primary" type="submit">Benutzer anlegen</button>
+  </div>
+</form>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Benutzer</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Benutzername</th>
+          <th>Name</th>
+          <th>Rolle</th>
+          <th>Status</th>
+          <th>Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in users %}
+        <tr>
+          <td>{{ item.username }}</td>
+          <td>{{ item.full_name }}<br><span class="muted">{{ item.email }}</span></td>
+          <td>{{ item.role_label }}</td>
+          <td><span class="status {{ 'active' if item.active else 'inactive' }}">{{ 'Aktiv' if item.active else 'Inaktiv' }}</span></td>
+          <td class="action-cell">
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <a class="button secondary" href="/users/{{ item.id }}/edit">Bearbeiten</a>
+                {% if item.id != user.id %}
+                <form class="inline-row-actions" method="post" action="/users/{{ item.id }}/delete">
+                  <button class="button danger" type="submit">Entfernen</button>
+                </form>
+                {% endif %}
+              </div>
+            </details>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">Noch keine Benutzer vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Rollenprofile</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Rolle</th>
+          <th>Zugriff</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for role in roles %}
+        <tr>
+          <td>
+            {{ role.label }}<br>
+            <span class="muted">{{ role.description }}</span>
+          </td>
+          <td>
+            {% if role.name == 'admin' %}
+            Voller Zugriff auf alle Seiten, alle Verwaltungsfunktionen und alle CRUD-Aktionen.
+            {% elif role.name == 'manager' %}
+            Zugriff auf Entitaeten, Vertraege, Stunden und Rechnungen; kein Zugriff auf Analytics oder Verwaltung.
+            {% elif role.name == 'consultant' %}
+            Nur Erfassung eigener Dienstleistungsstunden fuer Unternehmen und Vertraege.
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

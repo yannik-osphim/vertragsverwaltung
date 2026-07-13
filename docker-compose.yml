@@ -1,0 +1,117 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-contracts}
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    ports:
+      - "${POSTGRES_BIND_IP:-127.0.0.1}:${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-contracts}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql+psycopg://user:password@postgres:5432/contracts}
+      POSTGRES_MAINTENANCE_DB: ${POSTGRES_MAINTENANCE_DB:-postgres}
+      CONTRACT_DATA_DIR: ${CONTRACT_DATA_DIR:-data}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      SESSION_MAX_AGE_SECONDS: ${SESSION_MAX_AGE_SECONDS:-28800}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      SECURE_COOKIES: ${SECURE_COOKIES:-0}
+      FORCE_HTTPS: ${FORCE_HTTPS:-0}
+      ENABLE_SECURITY_HEADERS: ${ENABLE_SECURITY_HEADERS:-1}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ENABLE_SAMPLE_DATA: ${ENABLE_SAMPLE_DATA:-0}
+    expose:
+      - "8000"
+    volumes:
+      - app_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  reverse-proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      PUBLIC_SITE_ADDRESS: ${PUBLIC_SITE_ADDRESS:-:8000}
+      MAX_UPLOAD_SIZE: ${MAX_UPLOAD_SIZE:-50MB}
+    ports:
+      - "${PROXY_BIND_IP:-0.0.0.0}:${PROXY_HTTP_PORT:-8000}:8000"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/health >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  db-backup:
+    image: postgres:16
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-contracts}
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-password}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - db_backups:/backups
+    command: >
+      sh -c "mkdir -p /backups;
+      while true; do
+        pg_dump -h postgres -U \"${POSTGRES_USER:-user}\" -d \"${POSTGRES_DB:-contracts}\" -Fc -f \"/backups/${POSTGRES_DB:-contracts}_`date +%Y%m%d_%H%M%S`.dump\";
+        find /backups -type f -name '*.dump' -mtime +${BACKUP_RETENTION_DAYS:-14} -delete;
+        sleep ${BACKUP_INTERVAL_SECONDS:-86400};
+      done"
+
+volumes:
+  postgres_data:
+  app_data:
+  db_backups:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Benachrichtigungen - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Verwaltung</p>
+    <h1>Benachrichtigungen</h1>
+  </div>
+</section>
+
+<section class="metric-grid">
+  <article class="metric warning">
+    <span>Offen</span>
+    <strong>{{ open_count }}</strong>
+  </article>
+  <article class="metric">
+    <span>Quittiert</span>
+    <strong>{{ acknowledged_count }}</strong>
+  </article>
+  <article class="metric">
+    <span>Gesamt</span>
+    <strong>{{ notifications | length }}</strong>
+  </article>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Alle Benachrichtigungen</h2>
+    <span class="muted">Quittierte Hinweise bleiben sichtbar und werden nicht geloescht.</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Typ</th>
+          <th>Ziel</th>
+          <th>Faelligkeit</th>
+          <th>Titel</th>
+          <th>Nachricht</th>
+          <th>Quittiert</th>
+          <th>Aktualisiert</th>
+          <th>Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in notifications %}
+        <tr>
+          <td>
+            {% if item.acknowledged_at %}
+            <span class="status ended">Quittiert</span>
+            {% else %}
+            <span class="status {{ item.severity }}">{{ item.severity_label }}</span>
+            {% endif %}
+          </td>
+          <td>{% if item.notification_type == 'contract_end' %}Vertragsende{% else %}{{ item.notification_type }}{% endif %}</td>
+          <td>
+            {% if item.target_type == 'contract' and item.contract_number %}
+            <a href="/contracts/{{ item.target_id }}">{{ item.contract_number }}</a><br>
+            <span class="muted">{{ item.company_name or "-" }} - {{ item.contract_title or "-" }}</span>
+            {% else %}
+            {{ item.target_type }} #{{ item.target_id }}
+            {% endif %}
+          </td>
+          <td>{{ item.due_date | date_de }}<br><span class="muted">{{ item.timing_text }}</span></td>
+          <td>{{ item.title }}</td>
+          <td>{{ item.message }}</td>
+          <td>
+            {% if item.acknowledged_at %}
+            {{ item.acknowledged_at | datetime_de }}<br>
+            <span class="muted">{{ item.acknowledged_by_name or "-" }}</span>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td>{{ item.updated_at | datetime_de }}</td>
+          <td class="action-cell">
+            {% if item.acknowledged_at %}
+            <span class="muted">-</span>
+            {% else %}
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <form class="inline-row-actions" method="post" action="/notifications/{{ item.id }}/acknowledge">
+                  <input type="hidden" name="return_to" value="/notifications">
+                  <button class="button secondary" type="submit">Quittieren</button>
+                </form>
+              </div>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="empty">Keine Benachrichtigungen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

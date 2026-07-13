@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Lizenzen - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Entitaeten</p>
+    <h1>Lizenzen</h1>
+  </div>
+</section>
+
+{% set active_entity = 'licenses' %}
+{% include "entity_tabs.html" %}
+
+<section class="catalog-panel">
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Unternehmen</th>
+        <th>Vertrag</th>
+        <th>Beschreibung</th>
+        <th>DATEV</th>
+        <th>Einzelkosten</th>
+        <th>Menge</th>
+        <th>Jahreswert</th>
+        <th>Abrechnung</th>
+        <th>Start</th>
+        <th>Ende</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for license in licenses %}
+      <tr>
+        <td>{{ license.name }}</td>
+        <td>
+          <div class="entity-cell">
+            {% if license.company_logo_stored_filename %}
+            <img class="entity-logo" src="/companies/{{ license.company_id }}/logo" alt="{{ license.company_name }} Logo">
+            {% else %}
+            <span class="entity-logo placeholder">{{ license.company_name[:1] }}</span>
+            {% endif %}
+            <a href="/companies/{{ license.company_id }}">{{ license.company_name }}</a>
+          </div>
+        </td>
+        <td><a href="/contracts/{{ license.contract_id }}">{{ license.contract_number }}</a><br><span class="muted">{{ license.contract_title }}</span></td>
+        <td><div class="rich-text-content compact">{{ license.notes | rich_text }}</div></td>
+        <td>{{ license.datev_account or "-" }}</td>
+        <td>{{ license.annual_amount_cents | money(license.currency) }}</td>
+        <td>{{ license.quantity }}</td>
+        <td>{{ license.annual_total_cents | money(license.currency) }}</td>
+        <td>{{ license.billing_summary }}</td>
+        <td>{{ license.start_date | date_de }}</td>
+        <td>{{ license.end_date | date_de }}</td>
+        <td><span class="status {{ license.status }}">{{ license.status | status_label }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="12" class="empty">Keine Lizenzen vorhanden.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</section>
+{% endblock %}

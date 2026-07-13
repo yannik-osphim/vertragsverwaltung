@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Vertragsverwaltung{% endblock %}</title>
+  <link rel="icon" type="image/png" href="/static/osphim-logo.png">
+  <link rel="apple-touch-icon" href="/static/osphim-logo.png">
+  <script>
+    (function () {
+      try {
+        var savedTheme = localStorage.getItem("osphim-theme");
+        if (savedTheme) {
+          document.documentElement.dataset.theme = savedTheme;
+        } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+          document.documentElement.dataset.theme = "dark";
+        }
+      } catch (error) {
+      }
+    })();
+  </script>
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  {% if user %}
+  <header class="topbar">
+    <a class="brand" href="/">
+      <img src="/static/osphim-logo.png" alt="OSPHIM">
+      <span>Vertragsverwaltung</span>
+    </a>
+    <nav class="nav">
+      <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
+      {% if has_permission('companies.view') or has_permission('contracts.view') %}
+      <a href="/companies" class="{% if request.url.path.startswith('/companies') or request.url.path.startswith('/contracts') or request.url.path.startswith('/licenses') or request.url.path.startswith('/services') or request.url.path.startswith('/flat-fees') %}active{% endif %}">Entitaeten</a>
+      {% endif %}
+      {% if has_permission('time.approve') %}
+      <a href="/time-entries" class="{% if request.url.path.startswith('/time-entries') %}active{% endif %}">Stunden</a>
+      {% elif has_permission('time.create') %}
+      <a href="/time-entries/new" class="{% if request.url.path.startswith('/time-entries') %}active{% endif %}">Stunden</a>
+      {% endif %}
+      {% if has_permission('billing.create') %}
+      <a href="/billing" class="{% if request.url.path.startswith('/billing') or request.url.path.startswith('/invoices') %}active{% endif %}{% if billing_nav_count %} nav-attention{% endif %}">
+        <span>Abrechnung</span>
+        {% if billing_nav_count %}
+        <span class="nav-badge">{{ billing_nav_count }}</span>
+        {% endif %}
+      </a>
+      {% endif %}
+      {% if has_permission('analytics.view') %}
+      <a href="/analytics" class="{% if request.url.path.startswith('/analytics') %}active{% endif %}">Analytics</a>
+      {% endif %}
+      {% if has_permission('catalog.manage') or has_permission('characteristics.manage') or has_permission('settings.manage') or has_permission('users.manage') or is_superadmin %}
+      <details class="nav-menu">
+        <summary class="{% if request.url.path.startswith('/catalog') or request.url.path.startswith('/characteristics') or request.url.path.startswith('/settings') or request.url.path.startswith('/users') or request.url.path.startswith('/notifications') %}active{% endif %}">Verwaltung</summary>
+        <div class="nav-dropdown">
+          {% if has_permission('catalog.manage') %}
+          <a href="/catalog" class="{% if request.url.path.startswith('/catalog') %}active{% endif %}">Katalog</a>
+          {% endif %}
+          {% if has_permission('characteristics.manage') %}
+          <a href="/characteristics" class="{% if request.url.path.startswith('/characteristics') %}active{% endif %}">Merkmale</a>
+          {% endif %}
+          {% if has_permission('settings.manage') %}
+          <a href="/settings" class="{% if request.url.path.startswith('/settings') %}active{% endif %}">Einstellungen</a>
+          {% endif %}
+          {% if has_permission('users.manage') %}
+          <a href="/users" class="{% if request.url.path.startswith('/users') %}active{% endif %}">Benutzer</a>
+          {% endif %}
+          {% if is_superadmin %}
+          <a href="/notifications" class="{% if request.url.path.startswith('/notifications') %}active{% endif %}">Benachrichtigungen</a>
+          {% endif %}
+        </div>
+      </details>
+      {% endif %}
+    </nav>
+    <div class="user-menu">
+      <span>{{ user.full_name }} - {{ user.role_label }}</span>
+      <button class="theme-toggle" type="button" data-theme-toggle aria-label="Farbschema wechseln">Dunkel</button>
+      <a class="button subtle" href="/logout">Abmelden</a>
+    </div>
+  </header>
+  {% else %}
+  <button class="theme-toggle auth-theme-toggle" type="button" data-theme-toggle aria-label="Farbschema wechseln">Dunkel</button>
+  {% endif %}
+  <main class="{% if user %}app-shell{% else %}auth-shell{% endif %}">
+    {% if user and breadcrumbs %}
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      {% if back_url %}
+      <a class="back-link" href="{{ back_url }}" aria-label="Zurueck">&larr;</a>
+      {% endif %}
+      <a href="/">Dashboard</a>
+      {% for item in breadcrumbs %}
+      <span>/</span>
+      <a href="{{ item.href }}" {% if loop.last %}aria-current="page"{% endif %}>{{ item.label }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <script src="/static/table-controls.js" defer></script>
+  <script src="/static/action-menu.js" defer></script>
+  <script src="/static/confirm-delete.js" defer></script>
+  <script src="/static/file-upload.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js" defer></script>
+  <script src="/static/rich-text-editor.js" defer></script>
+  <script src="/static/theme.js" defer></script>
+</body>
+</html>

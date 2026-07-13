@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Stunden erfassen - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Leistungen</p>
+    <h1>Stunden erfassen</h1>
+  </div>
+</section>
+
+{% if saved %}
+<div class="alert success-alert">Stunden wurden gespeichert.</div>
+{% endif %}
+
+<form class="form-grid" method="post" action="/time-entries">
+  <input type="hidden" name="return_to" value="{{ return_to }}">
+  <label>
+    <span>Vertrag</span>
+    <select name="contract_id" required>
+      {% for contract in contracts %}
+      <option value="{{ contract.id }}">{{ contract.company_name }} - {{ contract.contract_number }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Leistung</span>
+    <select name="work_item_key" data-filter-contract-select="contract_id" required>
+      {% for item in work_items %}
+      <option value="{{ item.key }}" data-contract-id="{{ item.contract_id }}">{{ item.company_name }} - {{ item.contract_number }} - {{ item.label }}: {{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Startdatum</span>
+    <input name="start_date" type="date" value="{{ today }}" required>
+  </label>
+  <label>
+    <span>Enddatum</span>
+    <input name="end_date" type="date" value="{{ today }}" required>
+  </label>
+  <label>
+    <span>{{ work_unit_label }}</span>
+    <input name="hours" inputmode="decimal" placeholder="2,50" required>
+  </label>
+  <label class="span-2">
+    <span>Beschreibung</span>
+    <textarea name="description" rows="4" placeholder="Kurzbeschreibung der Leistung"></textarea>
+  </label>
+  <div class="form-actions span-2">
+    <button class="button primary" type="submit">Aufwand speichern</button>
+  </div>
+</form>
+{% endblock %}

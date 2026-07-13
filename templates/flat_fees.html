@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Pauschalen - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Entitaeten</p>
+    <h1>Pauschalen</h1>
+  </div>
+</section>
+
+{% set active_entity = 'flat_fees' %}
+{% include "entity_tabs.html" %}
+
+<section class="catalog-panel">
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Art</th>
+        <th>Unternehmen</th>
+        <th>Vertrag</th>
+        <th>Beschreibung</th>
+        <th>Erfolgsbedingung</th>
+        <th>DATEV</th>
+        <th>Betrag</th>
+        <th>Abrechnung</th>
+        <th>Zeitraum</th>
+        <th>Bonus-Freigabe</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in flat_fees %}
+      <tr>
+        <td>{{ item.name }}</td>
+        <td>{{ item.fee_kind | flat_fee_kind_label }}</td>
+        <td>
+          <div class="entity-cell">
+            {% if item.company_logo_stored_filename %}
+            <img class="entity-logo" src="/companies/{{ item.company_id }}/logo" alt="{{ item.company_name }} Logo">
+            {% else %}
+            <span class="entity-logo placeholder">{{ item.company_name[:1] }}</span>
+            {% endif %}
+            <a href="/companies/{{ item.company_id }}">{{ item.company_name }}</a>
+          </div>
+        </td>
+        <td><a href="/contracts/{{ item.contract_id }}">{{ item.contract_number }}</a><br><span class="muted">{{ item.contract_title }}</span></td>
+        <td><div class="rich-text-content compact">{{ item.notes | rich_text }}</div></td>
+        <td>
+          {% if item.fee_kind == 'success_bonus' %}
+          {{ item.success_condition or "-" }}
+          {% if item.expected_success_date %}
+          <br><span class="muted">Erwartet: {{ item.expected_success_date | date_de }}</span>
+          {% endif %}
+          {% if item.success_date %}
+          <br><span class="muted">Eingetreten: {{ item.success_date | date_de }}</span>
+          {% endif %}
+          {% else %}
+          -
+          {% endif %}
+        </td>
+        <td>{{ item.datev_account or "-" }}</td>
+        <td>{{ item.amount_cents | money(item.currency) }}</td>
+        <td>{{ item.billing_frequency | frequency_label }}</td>
+        <td>{{ item.start_date | date_de }} - {{ item.end_date | date_de }}</td>
+        <td><span class="status {{ item.approval_status }}">{{ item.approval_status | flat_fee_approval_label }}</span></td>
+        <td><span class="status {{ item.status }}">{{ item.status | status_label }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="12" class="empty">Keine Pauschalen vorhanden.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</section>
+{% endblock %}

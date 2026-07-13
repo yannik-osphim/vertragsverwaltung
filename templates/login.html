@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Login - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="login-panel">
+  <div class="login-brand">
+    <img src="/static/osphim-logo.png" alt="OSPHIM">
+    <p class="eyebrow">Interner Zugriff</p>
+    <h1>Vertragsverwaltung</h1>
+  </div>
+
+  {% if error %}
+  <p class="alert">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="/login" class="stack">
+    <label>
+      <span>Benutzername</span>
+      <input name="username" autocomplete="username" required autofocus>
+    </label>
+    <label>
+      <span>Passwort</span>
+      <input name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button class="button primary" type="submit">Anmelden</button>
+  </form>
+
+</section>
+{% endblock %}

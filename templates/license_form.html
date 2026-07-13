@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title or "Lizenz bearbeiten" }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+{% set selected_strategy = license.billing_strategy or 'standard' %}
+{% set selected_first_year_frequency = license.first_year_billing_frequency or license.billing_frequency %}
+{% set selected_renewal_frequency = license.renewal_billing_frequency or license.billing_frequency %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">{{ license.company_name }} / {{ license.contract_title }}</p>
+    <h1>{{ form_title or "Lizenz bearbeiten" }}</h1>
+  </div>
+  <a class="button subtle" href="{{ cancel_url }}">Zurueck</a>
+</section>
+
+<form class="form-grid" method="post" action="{{ form_action }}">
+  <label class="span-2">
+    <span>Lizenzart</span>
+    <select name="license_type_id" required>
+      {% for license_type in license_types %}
+      <option value="{{ license_type.id }}" {% if license.license_type_id == license_type.id %}selected{% endif %}>{{ license_type.name }} - DATEV {{ license_type.datev_account }}{% if not license_type.active %} (inaktiv){% endif %}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Einzelkosten p.a.</span>
+    <input name="annual_amount" inputmode="decimal" value="{{ license.annual_amount_cents | amount_input }}" required>
+  </label>
+  <label>
+    <span>Menge</span>
+    <input name="quantity" type="number" min="1" value="{{ license.quantity }}" required>
+  </label>
+  <label>
+    <span>Lizenzbeginn</span>
+    <input name="start_date" type="date" value="{{ license.start_date }}" required>
+  </label>
+  <label>
+    <span>Lizenzende</span>
+    <input name="end_date" type="date" value="{{ license.end_date or '' }}">
+  </label>
+  <label>
+    <span>Standard-Abrechnung</span>
+    <select name="billing_frequency">
+      {% for key, item in billing_frequencies.items() %}
+      <option value="{{ key }}" {% if license.billing_frequency == key %}selected{% endif %}>{{ item.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Abrechnungsstrategie</span>
+    <select name="billing_strategy">
+      {% for key, item in billing_strategies.items() %}
+      <option value="{{ key }}" {% if selected_strategy == key %}selected{% endif %}>{{ item.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>1. Lizenzjahr</span>
+    <select name="first_year_billing_frequency">
+      {% for key, item in billing_frequencies.items() %}
+      <option value="{{ key }}" {% if selected_first_year_frequency == key %}selected{% endif %}>{{ item.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Folgejahre</span>
+    <select name="renewal_billing_frequency">
+      {% for key, item in billing_frequencies.items() %}
+      <option value="{{ key }}" {% if selected_renewal_frequency == key %}selected{% endif %}>{{ item.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if show_status|default(true) %}
+  <label>
+    <span>Status</span>
+    <select name="status">
+      {% for item_status in contract_item_statuses %}
+      <option value="{{ item_status }}" {% if license.status == item_status %}selected{% endif %}>{{ item_status | status_label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <label class="span-2">
+    <span>Beschreibung</span>
+    <textarea name="notes" rows="4">{{ license.notes or '' }}</textarea>
+  </label>
+  <div class="form-actions span-2">
+    <a class="button subtle" href="{{ cancel_url }}">Abbrechen</a>
+    <button class="button primary" type="submit">{{ submit_label or "Speichern" }}</button>
+  </div>
+</form>
+{% endblock %}

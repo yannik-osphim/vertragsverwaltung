@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title or "Unternehmen anlegen" }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Stammdaten</p>
+    <h1>{{ form_title or "Unternehmen anlegen" }}</h1>
+  </div>
+  <a class="button subtle" href="{{ cancel_url or '/companies' }}">Zurueck</a>
+</section>
+
+{% if error %}
+<p class="alert">{{ error }}</p>
+{% endif %}
+
+<form class="form-grid sectioned-form" method="post" action="{{ form_action }}" enctype="multipart/form-data">
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Basisdaten</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Name <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="name" value="{{ form.name or '' }}" required>
+      </label>
+      <label>
+        <span>Juristischer Name</span>
+        <input name="legal_name" value="{{ form.legal_name or '' }}">
+      </label>
+      <label>
+        <span>Kundennummer</span>
+        <input name="customer_number" value="{{ form.customer_number or '' }}">
+      </label>
+      <label>
+        <span>Unsere Lieferantennummer beim Kunden</span>
+        <input name="customer_supplier_number" value="{{ form.customer_supplier_number or '' }}">
+      </label>
+      <label>
+        <span>Branche</span>
+        <input name="industry" value="{{ form.industry or '' }}">
+      </label>
+      <label>
+        <span>Status</span>
+        <select name="status">
+          <option value="active" {% if form.status == 'active' %}selected{% endif %}>Aktiv</option>
+          <option value="paused" {% if form.status == 'paused' %}selected{% endif %}>Pausiert</option>
+          <option value="inactive" {% if form.status == 'inactive' %}selected{% endif %}>Inaktiv</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Ansprechpartner</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Name <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="contact_name" value="{{ form.contact_name or '' }}" required>
+      </label>
+      <label>
+        <span>E-Mail <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="contact_email" type="email" value="{{ form.contact_email or '' }}" required>
+      </label>
+      <label>
+        <span>Telefonnummer <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="contact_phone" value="{{ form.contact_phone or '' }}" required>
+      </label>
+    </div>
+  </section>
+
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Rechnungsempfaenger</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Name <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="billing_recipient_name" value="{{ form.billing_recipient_name or '' }}" required>
+      </label>
+      <label>
+        <span>E-Mail <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="billing_recipient_email" type="email" value="{{ form.billing_recipient_email or '' }}" required>
+      </label>
+      <label>
+        <span>Telefonnummer <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="billing_recipient_phone" value="{{ form.billing_recipient_phone or '' }}" required>
+      </label>
+    </div>
+  </section>
+
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Dokumente und Notizen</h2>
+    <div class="form-section-grid two-column-section">
+      <label>
+        <span>Logo</span>
+        <input name="logo" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+        {% if form.logo_stored_filename %}
+        <small>Aktuelles Logo:</small>
+        <img class="logo-preview" src="/companies/{{ form.id }}/logo" alt="{{ form.name }} Logo">
+        {% endif %}
+      </label>
+      <label>
+        <span>Notizen</span>
+        <textarea name="notes" rows="4">{{ form.notes or '' }}</textarea>
+      </label>
+    </div>
+  </section>
+
+  <div class="form-actions span-full">
+    <a class="button subtle" href="{{ cancel_url or '/companies' }}">Abbrechen</a>
+    <button class="button primary" type="submit">Speichern</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Security</p>
+    <h1>{{ form_title }}</h1>
+  </div>
+  <a class="button subtle" href="{{ cancel_url }}">Zurueck</a>
+</section>
+
+{% if error %}
+<div class="flash error">{{ error }}</div>
+{% endif %}
+
+<form class="form-grid" method="post" action="{{ form_action }}">
+  <label>
+    <span>Benutzername</span>
+    <input name="username" value="{{ form.username }}" required>
+  </label>
+  <label>
+    <span>Name</span>
+    <input name="full_name" value="{{ form.full_name }}" required>
+  </label>
+  <label>
+    <span>E-Mail</span>
+    <input name="email" type="email" value="{{ form.email or '' }}">
+  </label>
+  <label>
+    <span>Rolle</span>
+    <select name="role_id" required>
+      {% for role in roles %}
+      <option value="{{ role.id }}" {% if form.role_id == role.id %}selected{% endif %}>{{ role.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Status</span>
+    <select name="active">
+      <option value="1" {% if form.active %}selected{% endif %}>Aktiv</option>
+      <option value="0" {% if not form.active %}selected{% endif %}>Inaktiv</option>
+    </select>
+  </label>
+  <div>
+    <span>Passwort</span>
+    <label class="checkbox-field">
+      <input name="generate_new_password" type="checkbox" value="1">
+      <span>Neues 64-Zeichen-Passwort generieren</span>
+    </label>
+    <small>Das generierte Passwort wird nach dem Speichern einmalig angezeigt.</small>
+  </div>
+  <div class="form-actions span-2">
+    <a class="button subtle" href="{{ cancel_url }}">Abbrechen</a>
+    <button class="button primary" type="submit">Benutzer speichern</button>
+  </div>
+</form>
+{% endblock %}

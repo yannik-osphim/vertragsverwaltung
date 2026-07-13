@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Unternehmen - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Stammdaten</p>
+    <h1>Unternehmen</h1>
+  </div>
+  {% if has_permission('companies.manage') %}
+  <a class="button primary" href="/companies/new">Unternehmen anlegen</a>
+  {% endif %}
+</section>
+
+{% set active_entity = 'companies' %}
+{% include "entity_tabs.html" %}
+
+<section class="catalog-panel">
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Kundennummer</th>
+        <th>Lieferantennummer</th>
+        <th>Branche</th>
+        <th>Vertraege</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for company in companies %}
+      <tr>
+        <td>
+          <div class="entity-cell">
+            {% if company.logo_stored_filename %}
+            <img class="entity-logo" src="/companies/{{ company.id }}/logo" alt="{{ company.name }} Logo">
+            {% else %}
+            <span class="entity-logo placeholder">{{ company.name[:1] }}</span>
+            {% endif %}
+            <div>
+              <a href="/companies/{{ company.id }}">{{ company.name }}</a><br><span class="muted">{{ company.legal_name }}</span>
+            </div>
+          </div>
+        </td>
+        <td>{{ company.customer_number or "-" }}</td>
+        <td>{{ company.customer_supplier_number or "-" }}</td>
+        <td>{{ company.industry or "-" }}</td>
+        <td>{{ company.contract_count }}</td>
+        <td><span class="status {{ company.status }}">{{ company.status | status_label }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">Noch keine Unternehmen vorhanden.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</section>
+{% endblock %}

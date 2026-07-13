@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Ueberblick</p>
+    <h1>Dashboard</h1>
+  </div>
+  <div class="page-actions">
+    {% if has_permission('companies.manage') %}
+    <a class="button secondary" href="/companies/new">Unternehmen anlegen</a>
+    {% endif %}
+    {% if has_permission('contracts.manage') %}
+    <a class="button primary" href="/contracts/new">Vertrag anlegen</a>
+    {% endif %}
+  </div>
+</section>
+
+{% if has_permission('companies.view') or has_permission('contracts.view') or has_permission('billing.create') or has_permission('time.approve') %}
+<section class="metric-grid">
+  {% if has_permission('companies.view') %}
+  <article class="metric">
+    <span>Unternehmen</span>
+    <strong>{{ metrics.company_count }}</strong>
+  </article>
+  {% endif %}
+  {% if has_permission('contracts.view') %}
+  <article class="metric">
+    <span>Aktive Vertraege</span>
+    <strong>{{ metrics.active_contract_count }}</strong>
+  </article>
+  <article class="metric success">
+    <span>Aktive Lizenzen</span>
+    <strong>{{ metrics.active_license_count }}</strong>
+  </article>
+  {% endif %}
+  {% if has_permission('billing.create') or has_permission('time.approve') %}
+  <article class="metric warning">
+    <span>Freigegeben, unberechnet</span>
+    <strong>{{ metrics.approved_unbilled_hours | work_quantity }}</strong>
+  </article>
+  {% endif %}
+  {% if has_permission('billing.create') %}
+  <a class="metric metric-link warning" href="/billing">
+    <span>Offen abrechenbar</span>
+    <strong>{{ metrics.billable_total_cents | money }}</strong>
+    <small>{{ metrics.billable_contract_count }} Vertraege</small>
+  </a>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if has_permission('contracts.view') and (notification_panel.open or notification_panel.acknowledged) %}
+<section class="analytics-band notification-panel">
+  <div class="section-title">
+    <h2>Benachrichtigungen</h2>
+    <span class="status {% if notification_panel.open %}reminder{% else %}active{% endif %}">{{ notification_panel.open | length }} offen</span>
+  </div>
+
+  {% if notification_panel.open %}
+  <div class="notification-list">
+    {% for item in notification_panel.open %}
+    <article class="notification-item {{ item.severity }}">
+      <div>
+        <span class="status {{ item.severity }}">{{ item.severity_label }}</span>
+        <h3><a href="/contracts/{{ item.target_id }}">{{ item.title }}</a></h3>
+        <p>{{ item.message }}</p>
+        <small>{{ item.company_name }} - {{ item.timing_text }}</small>
+      </div>
+      <form method="post" action="/notifications/{{ item.id }}/acknowledge">
+        <input type="hidden" name="return_to" value="/">
+        <button class="button secondary" type="submit">Quittieren</button>
+      </form>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">Keine offenen Benachrichtigungen.</p>
+  {% endif %}
+
+  {% if notification_panel.acknowledged %}
+  <details class="notification-history">
+    <summary>Quittierte Hinweise anzeigen</summary>
+    <div class="notification-list compact">
+      {% for item in notification_panel.acknowledged %}
+      <article class="notification-item acknowledged">
+        <div>
+          <span class="status ended">Quittiert</span>
+          <h3><a href="/contracts/{{ item.target_id }}">{{ item.title }}</a></h3>
+          <p>{{ item.message }}</p>
+          <small>{{ item.acknowledged_at | datetime_de }}{% if item.acknowledged_by_name %} von {{ item.acknowledged_by_name }}{% endif %}</small>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if has_permission('contracts.view') %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Aktuelle Vertraege</h2>
+    <a href="/contracts">Alle anzeigen</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Vertrag</th>
+          <th>Unternehmen</th>
+          <th>Lizenz-Default</th>
+          <th>Start</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for contract in contracts %}
+        <tr>
+          <td><a href="/contracts/{{ contract.id }}">{{ contract.contract_number }}</a><br><span class="muted">{{ contract.title }}</span></td>
+          <td>{{ contract.company_name }}</td>
+          <td>{{ contract.license_billing_frequency | frequency_label }}</td>
+          <td>{{ contract.start_date | date_de }}</td>
+          <td><span class="status {{ contract.status }}">{{ contract.status | status_label }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">Noch keine Vertraege vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% elif has_permission('time.create') %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Stunden erfassen</h2>
+    <a class="button primary" href="/time-entries/new">Oeffnen</a>
+  </div>
+</section>
+{% endif %}
+
+{% if has_permission('billing.create') %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Offene Rechnungen</h2>
+    <a href="/billing">Abrechnung</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Nummer</th>
+          <th>Unternehmen</th>
+          <th>Vertrag</th>
+          <th>Summe</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for invoice in invoices %}
+        <tr>
+          <td><a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_number }}</a></td>
+          <td>{{ invoice.company_name }}</td>
+          <td>{{ invoice.contract_number }}</td>
+          <td>{{ invoice.total_cents | money(invoice.currency) }}</td>
+          <td><span class="status {{ invoice.status }}">{{ invoice.status | status_label }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">Keine offenen Rechnungen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if has_permission('time.approve') %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Letzte Stundenbuchungen</h2>
+    <a href="/time-entries/new">Stunden erfassen</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Zeitraum</th>
+          <th>Unternehmen</th>
+          <th>Vertrag</th>
+          <th>Leistung</th>
+          <th>Aufwand</th>
+          <th>Beschreibung</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in entries %}
+        <tr>
+          <td>{{ (entry.start_date or entry.work_date) | date_de }} - {{ (entry.end_date or entry.work_date) | date_de }}</td>
+          <td>{{ entry.company_name }}</td>
+          <td>{{ entry.contract_number }}</td>
+          <td>{{ entry.service_name }}<br><span class="muted">{{ entry.work_item_type }}</span></td>
+          <td>{{ entry.hours | work_quantity }}</td>
+          <td>
+            {% if entry.description %}
+            <details class="table-details">
+              <summary>Anzeigen</summary>
+              <div class="rich-text-content compact">{{ entry.description | rich_text }}</div>
+            </details>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td><span class="status {{ entry.status }}">{{ entry.status | status_label }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">Noch keine Stundenbuchungen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

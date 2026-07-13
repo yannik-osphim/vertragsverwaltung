@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Stunden - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Leistungen</p>
+    <h1>Stundenbuchungen</h1>
+  </div>
+  <a class="button primary" href="/time-entries/new">Aufwand erfassen</a>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Stundenbuchungen</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Zeitraum</th>
+          <th>Unternehmen</th>
+          <th>Vertrag</th>
+          <th>Leistung</th>
+          <th>Benutzer</th>
+          <th>Aufwand</th>
+          <th>Beschreibung</th>
+          <th>Status</th>
+          <th>Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in entries %}
+        <tr>
+          <td>{{ (entry.start_date or entry.work_date) | date_de }} - {{ (entry.end_date or entry.work_date) | date_de }}</td>
+          <td>{{ entry.company_name }}</td>
+          <td><a href="/contracts/{{ entry.contract_id }}">{{ entry.contract_number }}</a></td>
+          <td>{{ entry.service_name }}<br><span class="muted">{{ entry.work_item_type }}</span></td>
+          <td>{{ entry.user_name }}</td>
+          <td>{{ entry.hours | work_quantity }}</td>
+          <td>
+            {% if entry.description %}
+            <details class="table-details">
+              <summary>Anzeigen</summary>
+              <div class="rich-text-content compact">{{ entry.description | rich_text }}</div>
+            </details>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td><span class="status {{ entry.status }}">{{ entry.status | status_label }}</span></td>
+          <td class="action-cell">
+            {% if entry.invoice_id or entry.has_invoice_link %}
+            <span class="muted">Gesperrt</span>
+            {% else %}
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <a class="button secondary" href="/time-entries/{{ entry.id }}/edit">Bearbeiten</a>
+                {% if entry.status == 'submitted' %}
+                <form class="inline-row-actions" method="post" action="/time-entries/{{ entry.id }}/approve">
+                  <button class="button secondary" type="submit">Freigeben</button>
+                </form>
+                {% endif %}
+                <form class="inline-row-actions" method="post" action="/time-entries/{{ entry.id }}/delete">
+                  <button class="button danger" type="submit">Loeschen</button>
+                </form>
+              </div>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="empty">Noch keine Stundenbuchungen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Dienstleistungen - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Entitaeten</p>
+    <h1>Dienstleistungen</h1>
+  </div>
+</section>
+
+{% set active_entity = 'services' %}
+{% include "entity_tabs.html" %}
+
+<section class="catalog-panel">
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Unternehmen</th>
+        <th>Vertrag</th>
+        <th>Beschreibung</th>
+        <th>DATEV</th>
+        <th>{{ rate_unit_label }}</th>
+        <th>Max. Umfang</th>
+        <th>Max. Volumen</th>
+        <th>Abrechnung</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for service in services %}
+      <tr>
+        <td>{{ service.name }}</td>
+        <td>
+          <div class="entity-cell">
+            {% if service.company_logo_stored_filename %}
+            <img class="entity-logo" src="/companies/{{ service.company_id }}/logo" alt="{{ service.company_name }} Logo">
+            {% else %}
+            <span class="entity-logo placeholder">{{ service.company_name[:1] }}</span>
+            {% endif %}
+            <a href="/companies/{{ service.company_id }}">{{ service.company_name }}</a>
+          </div>
+        </td>
+        <td><a href="/contracts/{{ service.contract_id }}">{{ service.contract_number }}</a><br><span class="muted">{{ service.contract_title }}</span></td>
+        <td><div class="rich-text-content compact">{{ service.notes | rich_text }}</div></td>
+        <td>{{ service.datev_account or "-" }}</td>
+        <td>{{ service.hourly_rate_cents | rate_money(service.currency) }}</td>
+        <td>
+          {% if service.contracted_hours is not none %}
+          {{ service.contracted_hours | hours_de }} h<br><span class="muted">{{ service.contracted_days | hours_de }} AT</span>
+          {% else %}
+          -
+          {% endif %}
+        </td>
+        <td>{{ service.contracted_volume_cents | money(service.currency) }}</td>
+        <td>{{ service.billing_frequency | frequency_label }}</td>
+        <td><span class="status {{ service.status }}">{{ service.status | status_label }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" class="empty">Keine Dienstleistungen vorhanden.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</section>
+{% endblock %}

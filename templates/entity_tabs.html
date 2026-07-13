@@ -1,0 +1,11 @@
+<nav class="tabs">
+  {% if has_permission('companies.view') %}
+  <a class="tab-link {% if active_entity == 'companies' %}active{% endif %}" href="/companies">Unternehmen</a>
+  {% endif %}
+  {% if has_permission('contracts.view') %}
+  <a class="tab-link {% if active_entity == 'contracts' %}active{% endif %}" href="/contracts">Vertraege</a>
+  <a class="tab-link {% if active_entity == 'licenses' %}active{% endif %}" href="/licenses">Lizenzen</a>
+  <a class="tab-link {% if active_entity == 'services' %}active{% endif %}" href="/services">Dienstleistungen</a>
+  <a class="tab-link {% if active_entity == 'flat_fees' %}active{% endif %}" href="/flat-fees">Pauschalen</a>
+  {% endif %}
+</nav>

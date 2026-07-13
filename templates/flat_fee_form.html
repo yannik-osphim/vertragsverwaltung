@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title or "Pauschale bearbeiten" }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">{{ item.company_name }} / {{ item.contract_title }}</p>
+    <h1>{{ form_title or "Pauschale bearbeiten" }}</h1>
+  </div>
+  <a class="button subtle" href="{{ cancel_url }}">Zurueck</a>
+</section>
+
+<form class="form-grid" method="post" action="{{ form_action }}" data-flat-fee-form>
+  <label>
+    <span>Pauschalart</span>
+    <select name="flat_fee_type_id" required>
+      {% for flat_fee_type in flat_fee_types %}
+      <option value="{{ flat_fee_type.id }}" {% if item.flat_fee_type_id == flat_fee_type.id %}selected{% endif %}>
+        {{ flat_fee_type.name }} - DATEV {{ flat_fee_type.datev_account }}
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Art</span>
+    <select name="fee_kind" required>
+      {% for key, label in flat_fee_kinds.items() %}
+      <option value="{{ key }}" {% if (item.fee_kind or 'work_package') == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Betrag</span>
+    <input name="amount" inputmode="decimal" value="{{ item.amount_cents | amount_input }}" required>
+  </label>
+  <label>
+    <span>Abrechnung</span>
+    <select name="billing_frequency">
+      {% for key, option in billing_frequencies.items() %}
+      <option value="{{ key }}" {% if item.billing_frequency == key %}selected{% endif %}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+    <small>Erfolgsboni werden immer einmalig abgerechnet.</small>
+  </label>
+  <label>
+    <span>Start</span>
+    <input name="start_date" type="date" value="{{ item.start_date }}" required>
+  </label>
+  <label>
+    <span>Ende</span>
+    <input name="end_date" type="date" value="{{ item.end_date or '' }}">
+  </label>
+  <label class="span-2">
+    <span>Erfolgsbedingung</span>
+    <input name="success_condition" value="{{ item.success_condition or '' }}" placeholder="z. B. Go-live erfolgreich abgeschlossen">
+  </label>
+  <label>
+    <span>Erwarteter Erfolg</span>
+    <input name="expected_success_date" type="date" value="{{ item.expected_success_date or '' }}">
+  </label>
+  <label>
+    <span>Erfolg eingetreten am</span>
+    <input name="success_date" type="date" value="{{ item.success_date or '' }}">
+  </label>
+  {% if show_status|default(true) %}
+  <label>
+    <span>Status</span>
+    <select name="status">
+      {% for item_status in contract_item_statuses %}
+      <option value="{{ item_status }}" {% if item.status == item_status %}selected{% endif %}>{{ item_status | status_label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label data-bonus-approval {% if (item.fee_kind or 'work_package') != 'success_bonus' %}hidden{% endif %}>
+    <span>Bonus-Freigabe</span>
+    <select name="approval_status">
+      {% for approval_key, approval_label in flat_fee_approval_statuses.items() %}
+      <option value="{{ approval_key }}" {% if (item.approval_status or 'not_applicable') == approval_key %}selected{% endif %}>{{ approval_label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% else %}
+  <input type="hidden" name="approval_status" value="{{ item.approval_status or 'pending' }}">
+  {% endif %}
+  <label class="span-2">
+    <span>Beschreibung</span>
+    <textarea name="notes" rows="4">{{ item.notes or '' }}</textarea>
+  </label>
+  <div class="form-actions span-2">
+    <a class="button subtle" href="{{ cancel_url }}">Abbrechen</a>
+    <button class="button primary" type="submit">{{ submit_label or "Speichern" }}</button>
+  </div>
+</form>
+<script>
+  (function () {
+    var form = document.querySelector("[data-flat-fee-form]");
+    if (!form) {
+      return;
+    }
+    var kind = form.elements.fee_kind;
+    var approval = form.elements.approval_status;
+    var approvalContainer = form.querySelector("[data-bonus-approval]");
+    var condition = form.elements.success_condition;
+    var billing = form.elements.billing_frequency;
+    if (!kind || !approval) {
+      return;
+    }
+
+    function syncFlatFeeFields() {
+      if (kind.value === "success_bonus") {
+        if (approvalContainer) {
+          approvalContainer.hidden = false;
+        }
+        if (approval.value === "not_applicable") {
+          approval.value = "pending";
+        }
+        if (billing) {
+          billing.value = "once";
+        }
+        if (condition) {
+          condition.required = true;
+        }
+      } else {
+        if (approvalContainer) {
+          approvalContainer.hidden = true;
+        }
+        approval.value = "not_applicable";
+        if (condition) {
+          condition.required = false;
+        }
+      }
+    }
+
+    kind.addEventListener("change", syncFlatFeeFields);
+    approval.addEventListener("change", function () {
+      if (approval.value !== "not_applicable") {
+        kind.value = "success_bonus";
+      }
+      syncFlatFeeFields();
+    });
+    syncFlatFeeFields();
+  })();
+</script>
+{% endblock %}

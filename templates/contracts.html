@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Vertraege - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Vertragsbestand</p>
+    <h1>Vertraege</h1>
+  </div>
+  {% if has_permission('contracts.manage') %}
+  <a class="button primary" href="/contracts/new">Vertrag anlegen</a>
+  {% endif %}
+</section>
+
+{% set active_entity = 'contracts' %}
+{% include "entity_tabs.html" %}
+
+<section class="catalog-panel">
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Vertrag</th>
+        <th>Unternehmen</th>
+        <th>Lizenzen</th>
+        <th>Lizenz-Default</th>
+        <th>Max. DL-Volumen</th>
+        <th>Laufzeit</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for contract in contracts %}
+      <tr>
+        <td><a href="/contracts/{{ contract.id }}">{{ contract.contract_number }}</a><br><span class="muted">{{ contract.title }}</span></td>
+        <td>
+          <div class="entity-cell">
+            {% if contract.company_logo_stored_filename %}
+            <img class="entity-logo" src="/companies/{{ contract.company_id }}/logo" alt="{{ contract.company_name }} Logo">
+            {% else %}
+            <span class="entity-logo placeholder">{{ contract.company_name[:1] }}</span>
+            {% endif %}
+            <a href="/companies/{{ contract.company_id }}">{{ contract.company_name }}</a>
+          </div>
+        </td>
+        <td>{{ contract.license_count }}</td>
+        <td>{{ contract.license_billing_frequency | frequency_label }}</td>
+        <td>
+          <strong>{{ contract.contracted_service_cents | money(contract.currency) }}</strong><br>
+          <span class="muted">{{ contract.contracted_service_hours | hours_de }} h vereinbart</span>
+          <br><span class="muted">{{ contract.contracted_service_days | hours_de }} AT</span>
+          <div class="volume-progress" aria-label="{{ contract.free_service_percent }} Prozent frei">
+            <span style="width: {{ contract.free_service_percent }}%"></span>
+          </div>
+          <br><span class="status active">{{ contract.free_service_cents | money(contract.currency) }} frei</span>
+          <br><span class="muted">{{ contract.free_service_hours | hours_de }} h / {{ contract.free_service_days | hours_de }} AT frei</span>
+        </td>
+        <td>{{ contract.start_date | date_de }} - {{ contract.end_date | date_de }}</td>
+        <td><span class="status {{ contract.status }}">{{ contract.status | status_label }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty">Noch keine Vertraege vorhanden.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</section>
+{% endblock %}

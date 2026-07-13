@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block title %}{{ company.name }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Unternehmen</p>
+    <h1>{{ company.name }}</h1>
+  </div>
+  <div class="page-actions">
+    {% if has_permission('companies.manage') %}
+    <a class="button secondary" href="/companies/{{ company.id }}/edit">Bearbeiten</a>
+    {% endif %}
+    {% if has_permission('contracts.manage') %}
+    <a class="button primary" href="/contracts/new?company_id={{ company.id }}">Vertrag anlegen</a>
+    {% endif %}
+    {% if is_superadmin and company_can_delete %}
+    <form method="post" action="/companies/{{ company.id }}/delete">
+      <button class="button danger" type="submit">Loeschen</button>
+    </form>
+    {% endif %}
+    <a class="button subtle" href="/companies">Zurueck</a>
+  </div>
+</section>
+
+<nav class="tabs">
+  <a class="tab-link {% if active_company_tab == 'overview' %}active{% endif %}" href="/companies/{{ company.id }}?tab=overview">Uebersicht</a>
+  <a class="tab-link {% if active_company_tab == 'contracts' %}active{% endif %}" href="/companies/{{ company.id }}?tab=contracts">Vertraege</a>
+  <a class="tab-link {% if active_company_tab == 'licenses' %}active{% endif %}" href="/companies/{{ company.id }}?tab=licenses">Aktive Lizenzen</a>
+  {% if has_permission('billing.create') or has_permission('analytics.view') %}
+  <a class="tab-link {% if active_company_tab == 'invoices' %}active{% endif %}" href="/companies/{{ company.id }}?tab=invoices">Finalisierte Rechnungen</a>
+  {% endif %}
+  {% if has_permission('time.approve') %}
+  <a class="tab-link {% if active_company_tab == 'time' %}active{% endif %}" href="/companies/{{ company.id }}?tab=time">Aggregierte Stunden</a>
+  {% endif %}
+</nav>
+
+{% if active_company_tab == 'overview' %}
+<section class="detail-layout">
+  <div class="detail-panel">
+    <div class="detail-header">
+      <div class="detail-identity">
+        {% if company.logo_stored_filename %}
+        <img class="detail-logo" src="/companies/{{ company.id }}/logo" alt="{{ company.name }} Logo">
+        {% endif %}
+        <div>
+          <span class="status {{ company.status }}">{{ company.status | status_label }}</span>
+          <h2>{{ company.legal_name or company.name }}</h2>
+        </div>
+      </div>
+      <strong>{{ company.customer_number or "-" }}</strong>
+    </div>
+    <dl class="detail-grid">
+      <div><dt>Branche</dt><dd>{{ company.industry or "-" }}</dd></div>
+      <div><dt>Lieferantennummer beim Kunden</dt><dd>{{ company.customer_supplier_number or "-" }}</dd></div>
+      <div><dt>Ansprechpartner</dt><dd>{{ company.contact_name or "-" }}<br><span class="muted">{{ company.contact_email or "-" }} / {{ company.contact_phone or "-" }}</span></dd></div>
+      <div><dt>Rechnungsempfaenger</dt><dd>{{ company.billing_recipient_name or "-" }}<br><span class="muted">{{ company.billing_recipient_email or "-" }} / {{ company.billing_recipient_phone or "-" }}</span></dd></div>
+      <div><dt>Angelegt</dt><dd>{{ company.created_at[:10] | date_de }}</dd></div>
+      <div class="span-2"><dt>Notizen</dt><dd><div class="rich-text-content">{{ company.notes | rich_text }}</div></dd></div>
+    </dl>
+
+    <div class="history">
+      <h3>Charakteristiken</h3>
+      <div class="chip-list">
+        {% for item in characteristics %}
+        <span class="chip">{{ item.name }}: {{ item.value_text or "-" }}</span>
+        {% else %}
+        <span class="muted">Noch keine Merkmale gesetzt.</span>
+        {% endfor %}
+      </div>
+      {% if has_permission('characteristics.manage') and characteristic_definitions %}
+      <form class="inline-form" method="post" action="/companies/{{ company.id }}/characteristics">
+        <select name="definition_id">
+          {% for definition in characteristic_definitions %}
+          <option value="{{ definition.id }}">{{ definition.name }}</option>
+          {% endfor %}
+        </select>
+        <input name="value_text" placeholder="Wert" required>
+        <button class="button secondary" type="submit">Setzen</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <aside class="workflow-panel">
+    <h2>Vertragsdaten</h2>
+    <dl class="detail-grid">
+      <div><dt>Vertraege</dt><dd>{{ contracts | length }}</dd></div>
+      <div><dt>Aktive Lizenzen</dt><dd>{{ company_metrics.active_license_count }}</dd></div>
+      <div><dt>Lizenzmenge</dt><dd>{{ company_metrics.active_license_quantity }}</dd></div>
+      <div><dt>Lizenz-ARR</dt><dd>{{ company_metrics.active_license_arr_cents | money }}</dd></div>
+      {% if contracts %}
+      <div class="span-2"><dt>Aktuellster Vertrag</dt><dd><a href="/contracts/{{ contracts[0].id }}">{{ contracts[0].contract_number }}</a><br><span class="muted">{{ contracts[0].title }}</span></dd></div>
+      {% endif %}
+    </dl>
+  </aside>
+</section>
+
+<section class="metric-grid">
+  <article class="metric success">
+    <span>Aktive Lizenzen</span>
+    <strong>{{ company_metrics.active_license_count }}</strong>
+    <small>{{ company_metrics.active_license_quantity }} Lizenzmenge</small>
+  </article>
+  <article class="metric">
+    <span>Aktiver Lizenz-ARR</span>
+    <strong>{{ company_metrics.active_license_arr_cents | money }}</strong>
+  </article>
+  {% if has_permission('billing.create') or has_permission('analytics.view') %}
+  <article class="metric">
+    <span>In Rechnung gestellt</span>
+    <strong>{{ invoice_summary.total_cents | money }}</strong>
+  </article>
+  {% endif %}
+  {% if has_permission('time.approve') %}
+  <article class="metric warning">
+    <span>Gebuchte Stunden</span>
+    <strong>{{ company_metrics.booked_hours | work_quantity }}</strong>
+  </article>
+  {% endif %}
+</section>
+
+{% if has_permission('billing.create') or has_permission('analytics.view') %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>In Rechnung gestelltes Volumen</h2>
+    <span class="muted">Finalisierte Rechnungen</span>
+  </div>
+  <dl class="detail-grid">
+    <div><dt>Gesamt</dt><dd>{{ invoice_summary.total_cents | money }}</dd></div>
+    <div><dt>Lizenzen</dt><dd>{{ invoice_summary.license_cents | money }}</dd></div>
+    <div><dt>Dienstleistungen</dt><dd>{{ invoice_summary.service_cents | money }}</dd></div>
+    <div><dt>Variable Kostensaetze</dt><dd>{{ invoice_summary.variable_cost_cents | money }}</dd></div>
+    <div><dt>Pauschalen</dt><dd>{{ invoice_summary.flat_fee_cents | money }}</dd></div>
+  </dl>
+</section>
+{% endif %}
+{% endif %}
+
+{% if active_company_tab == 'contracts' %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Vertraege</h2>
+    <strong>{{ contracts | length }}</strong>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Nummer</th>
+          <th>Titel</th>
+          <th>Laufzeit</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for contract in contracts %}
+        <tr>
+          <td><a href="/contracts/{{ contract.id }}">{{ contract.contract_number }}</a></td>
+          <td>{{ contract.title }}</td>
+          <td>{{ contract.start_date | date_de }} - {{ contract.end_date | date_de }}</td>
+          <td><span class="status {{ contract.status }}">{{ contract.status | status_label }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="empty">Keine Vertraege vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if active_company_tab == 'licenses' %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Aktive Lizenzen nach Vertrag</h2>
+    <strong>{{ company_metrics.active_license_count }}</strong>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Lizenz</th>
+          <th>Vertrag</th>
+          <th>DATEV</th>
+          <th>Menge</th>
+          <th>Jahreswert</th>
+          <th>Abrechnung</th>
+          <th>Zeitraum</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for license in active_licenses %}
+        <tr>
+          <td>{{ license.name }}</td>
+          <td><a href="/contracts/{{ license.contract_id }}">{{ license.contract_number }}</a><br><span class="muted">{{ license.contract_title }}</span></td>
+          <td>{{ license.datev_account or "-" }}</td>
+          <td>{{ license.quantity }}</td>
+          <td>{{ license.annual_total_cents | money(license.currency) }}</td>
+          <td>{{ license.billing_summary }}</td>
+          <td>{{ license.start_date | date_de }} - {{ license.end_date | date_de }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">Keine aktiven Lizenzen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if (has_permission('billing.create') or has_permission('analytics.view')) and active_company_tab == 'invoices' %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Finalisierte Rechnungen</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Interne Nummer</th>
+          <th>DATEV-Nr.</th>
+          <th>DATEV-Datum</th>
+          <th>Vertrag</th>
+          <th>Zeitraum</th>
+          <th>Netto</th>
+          <th>Brutto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for invoice in finalized_invoices %}
+        <tr>
+          <td><a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_number }}</a></td>
+          <td>{{ invoice.datev_invoice_number or "-" }}</td>
+          <td>{{ invoice.datev_invoice_date | date_de }}</td>
+          <td><a href="/contracts/{{ invoice.contract_id }}">{{ invoice.contract_number }}</a><br><span class="muted">{{ invoice.contract_title }}</span></td>
+          <td>{{ invoice.period_start | date_de }} - {{ invoice.period_end | date_de }}</td>
+          <td>{{ invoice.total_cents | money(invoice.currency) }}</td>
+          <td>{{ (invoice.gross_total_cents or invoice.total_cents) | money(invoice.currency) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">Noch keine finalisierten Rechnungen.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if has_permission('time.approve') and active_company_tab == 'time' %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Aggregierte Stundenbuchungen</h2>
+    <strong>{{ company_metrics.booked_hours | work_quantity }}</strong>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Vertrag</th>
+          <th>Leistung</th>
+          <th>DATEV</th>
+          <th>Status</th>
+          <th>Buchungen</th>
+          <th>Aufwand</th>
+          <th>Volumen</th>
+          <th>Zeitraum</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in time_aggregates %}
+        <tr>
+          <td><a href="/contracts/{{ item.contract_id }}">{{ item.contract_number }}</a><br><span class="muted">{{ item.contract_title }}</span></td>
+          <td>{{ item.service_name }}<br><span class="muted">{{ item.work_item_type }}</span></td>
+          <td>{{ item.datev_account or "-" }}</td>
+          <td><span class="status {{ item.status }}">{{ item.status | status_label }}</span></td>
+          <td>{{ item.entry_count }}</td>
+          <td>{{ item.hours | work_quantity }}</td>
+          <td>{{ item.amount_cents | money }}</td>
+          <td>{{ item.first_work_date | date_de }} - {{ item.last_work_date | date_de }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty">Keine Stundenbuchungen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

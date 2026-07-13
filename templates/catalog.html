@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block title %}Katalog - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">DATEV-Katalog</p>
+    <h1>Lizenz-, Dienstleistungs- und Pauschalarten</h1>
+  </div>
+</section>
+
+<nav class="tabs">
+  <a class="tab-link {% if active_tab == 'licenses' %}active{% endif %}" href="/catalog?tab=licenses">Lizenzarten</a>
+  <a class="tab-link {% if active_tab == 'services' %}active{% endif %}" href="/catalog?tab=services">Dienstleistungsarten</a>
+  <a class="tab-link {% if active_tab == 'flat_fees' %}active{% endif %}" href="/catalog?tab=flat_fees">Pauschalarten</a>
+</nav>
+
+{% if active_tab == 'licenses' %}
+<section class="catalog-panel">
+  <div class="section-title">
+    <h2>Lizenzarten</h2>
+    <span class="muted">Nur aktive Lizenzarten stehen beim Vertrag zur Auswahl.</span>
+  </div>
+
+  <form class="form-grid compact-form" method="post" action="/catalog/license-types">
+    <label>
+      <span>Name</span>
+      <input name="name" placeholder="API Add-on" required>
+    </label>
+    <label>
+      <span>DATEV-Konto</span>
+      <input name="datev_account" placeholder="4403" required>
+    </label>
+    <label class="span-2">
+      <span>Beschreibung</span>
+      <textarea name="description" rows="3" placeholder="Beschreibung der Lizenzart"></textarea>
+    </label>
+    <div class="form-actions span-2">
+      <button class="button primary" type="submit">Lizenzart speichern</button>
+    </div>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>DATEV</th>
+          <th>Nutzung</th>
+          <th>Status</th>
+          {% if is_superadmin %}<th>Aktion</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in license_types %}
+        <tr>
+          <td>{{ item.name }}<div class="muted rich-text-content compact">{{ item.description | rich_text }}</div></td>
+          <td>{{ item.datev_account }}</td>
+          <td>{{ item.usage_count }}</td>
+          <td><span class="status {{ 'active' if item.active else 'inactive' }}">{{ 'Aktiv' if item.active else 'Inaktiv' }}</span></td>
+          {% if is_superadmin %}
+          <td class="action-cell">
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <a class="button secondary" href="/catalog/license-types/{{ item.id }}/edit">Bearbeiten</a>
+                {% if item.active %}
+                <form class="inline-row-actions" method="post" action="/catalog/license-types/{{ item.id }}/delete">
+                  <button class="button danger" type="submit">{% if item.usage_count == 0 and (not item.active or not item.is_seeded) %}Loeschen{% else %}Deaktivieren{% endif %}</button>
+                </form>
+                {% else %}
+                <form class="inline-row-actions" method="post" action="/catalog/license-types/{{ item.id }}/activate">
+                  <button class="button secondary" type="submit">Aktivieren</button>
+                </form>
+                {% if item.usage_count == 0 %}
+                <form class="inline-row-actions" method="post" action="/catalog/license-types/{{ item.id }}/delete">
+                  <button class="button danger" type="submit">Loeschen</button>
+                </form>
+                {% endif %}
+                {% endif %}
+              </div>
+            </details>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{% if is_superadmin %}5{% else %}4{% endif %}" class="empty">Keine Lizenzarten vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if active_tab == 'services' %}
+<section class="catalog-panel">
+  <div class="section-title">
+    <h2>Dienstleistungsarten</h2>
+    <span class="muted">Nur aktive Dienstleistungsarten stehen beim Vertrag zur Auswahl.</span>
+  </div>
+
+  <form class="form-grid compact-form" method="post" action="/catalog/service-types">
+    <label>
+      <span>Name</span>
+      <input name="name" placeholder="Projektmanagement" required>
+    </label>
+    <label>
+      <span>DATEV-Konto</span>
+      <input name="datev_account" placeholder="8403" required>
+    </label>
+    <label>
+      <span>Standard-{{ rate_unit_label }}</span>
+      <input name="default_hourly_rate" inputmode="decimal" placeholder="{% if settings.billing_rate_unit == 'day' %}1.120,00{% else %}140,00{% endif %}" required>
+    </label>
+    <label>
+      <span>Beschreibung</span>
+      <textarea name="description" rows="3" placeholder="Beschreibung der Leistungsart"></textarea>
+    </label>
+    <div class="form-actions span-2">
+      <button class="button primary" type="submit">Dienstleistungsart speichern</button>
+    </div>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>DATEV</th>
+          <th>Standard</th>
+          <th>Nutzung</th>
+          <th>Status</th>
+          {% if is_superadmin %}<th>Aktion</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in service_types %}
+        <tr>
+          <td>{{ item.name }}<div class="muted rich-text-content compact">{{ item.description | rich_text }}</div></td>
+          <td>{{ item.datev_account }}</td>
+          <td>{{ item.default_hourly_rate_cents | rate_money }}</td>
+          <td>{{ item.usage_count }}</td>
+          <td><span class="status {{ 'active' if item.active else 'inactive' }}">{{ 'Aktiv' if item.active else 'Inaktiv' }}</span></td>
+          {% if is_superadmin %}
+          <td class="action-cell">
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <a class="button secondary" href="/catalog/service-types/{{ item.id }}/edit">Bearbeiten</a>
+                {% if item.active %}
+                <form class="inline-row-actions" method="post" action="/catalog/service-types/{{ item.id }}/delete">
+                  <button class="button danger" type="submit">{% if item.usage_count == 0 and (not item.active or not item.is_seeded) %}Loeschen{% else %}Deaktivieren{% endif %}</button>
+                </form>
+                {% else %}
+                <form class="inline-row-actions" method="post" action="/catalog/service-types/{{ item.id }}/activate">
+                  <button class="button secondary" type="submit">Aktivieren</button>
+                </form>
+                {% if item.usage_count == 0 %}
+                <form class="inline-row-actions" method="post" action="/catalog/service-types/{{ item.id }}/delete">
+                  <button class="button danger" type="submit">Loeschen</button>
+                </form>
+                {% endif %}
+                {% endif %}
+              </div>
+            </details>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{% if is_superadmin %}6{% else %}5{% endif %}" class="empty">Keine Dienstleistungsarten vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if active_tab == 'flat_fees' %}
+<section class="catalog-panel">
+  <div class="section-title">
+    <h2>Pauschalarten</h2>
+    <span class="muted">Nur aktive Pauschalarten stehen beim Vertrag zur Auswahl.</span>
+  </div>
+
+  <form class="form-grid compact-form" method="post" action="/catalog/flat-fee-types">
+    <label>
+      <span>Name</span>
+      <input name="name" placeholder="Arbeitspaket" required>
+    </label>
+    <label>
+      <span>DATEV-Konto</span>
+      <input name="datev_account" placeholder="8405" required>
+    </label>
+    <label class="span-2">
+      <span>Beschreibung</span>
+      <textarea name="description" rows="3" placeholder="Beschreibung der Pauschalart"></textarea>
+    </label>
+    <div class="form-actions span-2">
+      <button class="button primary" type="submit">Pauschalart speichern</button>
+    </div>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>DATEV</th>
+          <th>Nutzung</th>
+          <th>Status</th>
+          {% if is_superadmin %}<th>Aktion</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in flat_fee_types %}
+        <tr>
+          <td>{{ item.name }}<div class="muted rich-text-content compact">{{ item.description | rich_text }}</div></td>
+          <td>{{ item.datev_account }}</td>
+          <td>{{ item.usage_count }}</td>
+          <td><span class="status {{ 'active' if item.active else 'inactive' }}">{{ 'Aktiv' if item.active else 'Inaktiv' }}</span></td>
+          {% if is_superadmin %}
+          <td class="action-cell">
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <a class="button secondary" href="/catalog/flat-fee-types/{{ item.id }}/edit">Bearbeiten</a>
+                {% if item.active %}
+                <form class="inline-row-actions" method="post" action="/catalog/flat-fee-types/{{ item.id }}/delete">
+                  <button class="button danger" type="submit">{% if item.usage_count == 0 %}Loeschen{% else %}Deaktivieren{% endif %}</button>
+                </form>
+                {% else %}
+                <form class="inline-row-actions" method="post" action="/catalog/flat-fee-types/{{ item.id }}/activate">
+                  <button class="button secondary" type="submit">Aktivieren</button>
+                </form>
+                {% if item.usage_count == 0 %}
+                <form class="inline-row-actions" method="post" action="/catalog/flat-fee-types/{{ item.id }}/delete">
+                  <button class="button danger" type="submit">Loeschen</button>
+                </form>
+                {% endif %}
+                {% endif %}
+              </div>
+            </details>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{% if is_superadmin %}5{% else %}4{% endif %}" class="empty">Keine Pauschalarten vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

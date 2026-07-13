@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title or "Dienstleistung bearbeiten" }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">{{ service.company_name }} / {{ service.contract_title }}</p>
+    <h1>{{ form_title or "Dienstleistung bearbeiten" }}</h1>
+  </div>
+  <a class="button subtle" href="{{ cancel_url }}">Zurueck</a>
+</section>
+
+<form class="form-grid" method="post" action="{{ form_action }}">
+  <label class="span-2">
+    <span>Dienstleistungsart</span>
+    <select name="service_type_id" required>
+      {% for service_type in service_types %}
+      <option value="{{ service_type.id }}" {% if service.service_type_id == service_type.id %}selected{% endif %}>{{ service_type.name }} - DATEV {{ service_type.datev_account }}{% if not service_type.active %} (inaktiv){% endif %}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>{{ rate_unit_label }}</span>
+    <input name="hourly_rate" inputmode="decimal" value="{{ service.hourly_rate_cents | rate_input }}" required>
+  </label>
+  <label>
+    <span>Max. Stunden</span>
+    <input name="contracted_hours" inputmode="decimal" value="{% if service.contracted_hours is not none %}{{ service.contracted_hours | hours_de }}{% endif %}">
+  </label>
+  <label>
+    <span>Abrechnung</span>
+    <select name="billing_frequency">
+      {% for key, item in billing_frequencies.items() %}
+      <option value="{{ key }}" {% if service.billing_frequency == key %}selected{% endif %}>{{ item.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if show_status|default(true) %}
+  <label>
+    <span>Status</span>
+    <select name="status">
+      {% for item_status in contract_item_statuses %}
+      <option value="{{ item_status }}" {% if service.status == item_status %}selected{% endif %}>{{ item_status | status_label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <label class="span-2">
+    <span>Beschreibung</span>
+    <textarea name="notes" rows="4">{{ service.notes or '' }}</textarea>
+  </label>
+  <div class="form-actions span-2">
+    <a class="button subtle" href="{{ cancel_url }}">Abbrechen</a>
+    <button class="button primary" type="submit">{{ submit_label or "Speichern" }}</button>
+  </div>
+</form>
+{% endblock %}

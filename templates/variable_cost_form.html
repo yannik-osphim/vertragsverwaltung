@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title or "Variablen Kostensatz bearbeiten" }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">{{ item.company_name }} / {{ item.contract_title }}</p>
+    <h1>{{ form_title or "Variablen Kostensatz bearbeiten" }}</h1>
+  </div>
+  <a class="button subtle" href="{{ cancel_url }}">Zurueck</a>
+</section>
+
+<form class="form-grid" method="post" action="{{ form_action }}">
+  <label>
+    <span>Name</span>
+    <input name="name" value="{{ item.name }}" required>
+  </label>
+  <label>
+    <span>DATEV-Konto</span>
+    <input name="datev_account" value="{{ item.datev_account or '' }}">
+  </label>
+  <label>
+    <span>Satz</span>
+    <input name="rate" inputmode="decimal" value="{{ item.rate_cents | amount_input }}" required>
+  </label>
+  <label>
+    <span>Menge</span>
+    <input name="quantity" inputmode="decimal" value="{{ item.quantity | hours_de }}" required>
+  </label>
+  <label>
+    <span>Einheit</span>
+    <input name="unit" value="{{ item.unit }}" required>
+  </label>
+  <label>
+    <span>Abrechnung</span>
+    <select name="billing_frequency">
+      {% for key, option in billing_frequencies.items() %}
+      <option value="{{ key }}" {% if item.billing_frequency == key %}selected{% endif %}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Start</span>
+    <input name="start_date" type="date" value="{{ item.start_date }}" required>
+  </label>
+  <label>
+    <span>Ende</span>
+    <input name="end_date" type="date" value="{{ item.end_date or '' }}">
+  </label>
+  {% if show_status|default(true) %}
+  <label>
+    <span>Status</span>
+    <select name="status">
+      {% for item_status in contract_item_statuses %}
+      <option value="{{ item_status }}" {% if item.status == item_status %}selected{% endif %}>{{ item_status | status_label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <label class="span-2">
+    <span>Beschreibung</span>
+    <textarea name="description" rows="4">{{ item.description or '' }}</textarea>
+  </label>
+  <label class="span-2">
+    <span>Notizen</span>
+    <textarea name="notes" rows="4">{{ item.notes or '' }}</textarea>
+  </label>
+  <div class="form-actions span-2">
+    <a class="button subtle" href="{{ cancel_url }}">Abbrechen</a>
+    <button class="button primary" type="submit">{{ submit_label or "Speichern" }}</button>
+  </div>
+</form>
+{% endblock %}

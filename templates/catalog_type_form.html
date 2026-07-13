@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">DATEV-Katalog</p>
+    <h1>{{ form_title }}</h1>
+  </div>
+  <a class="button subtle" href="{{ cancel_url }}">Zurueck</a>
+</section>
+
+{% if error %}
+<p class="alert">{{ error }}</p>
+{% endif %}
+
+<form class="form-grid sectioned-form" method="post" action="{{ form_action }}">
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Stammdaten</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Name <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="name" value="{{ form.name or '' }}" required>
+      </label>
+      <label>
+        <span>DATEV-Konto <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="datev_account" value="{{ form.datev_account or '' }}" required>
+      </label>
+      {% if catalog_kind == 'service' %}
+      <label>
+        <span>Standard-{{ rate_unit_label }} <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="default_hourly_rate" inputmode="decimal" value="{{ form.default_hourly_rate or '' }}" required>
+      </label>
+      {% endif %}
+      <label>
+        <span>Status</span>
+        <select name="active">
+          <option value="1" {% if form.active %}selected{% endif %}>Aktiv</option>
+          <option value="0" {% if not form.active %}selected{% endif %}>Inaktiv</option>
+        </select>
+      </label>
+      <label class="span-full">
+        <span>Beschreibung</span>
+        <textarea name="description" rows="4">{{ form.description or '' }}</textarea>
+      </label>
+    </div>
+  </section>
+
+  <div class="form-actions span-full">
+    <a class="button subtle" href="{{ cancel_url }}">Abbrechen</a>
+    <button class="button primary" type="submit">Speichern</button>
+  </div>
+</form>
+{% endblock %}

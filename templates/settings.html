@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Verwaltung</p>
+    <h1>Einstellungen</h1>
+  </div>
+</section>
+
+{% if error %}
+<div class="alert">{{ error }}</div>
+{% endif %}
+
+<form class="form-grid sectioned-form" method="post" action="/settings">
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Lizenzabrechnung</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Lizenzabrechnung vor Beginn <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="license_billable_lead_days" type="number" min="0" step="1" value="{{ form.license_billable_lead_days }}" required>
+        <small class="field-hint">Tage, die ein Lizenzposten vor Periodenbeginn als abrechenbar gilt.</small>
+      </label>
+    </div>
+  </section>
+
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Benachrichtigungen</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Vertragsende-Vorwarnung <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="contract_end_notification_days" type="number" min="0" step="1" value="{{ form.contract_end_notification_days }}" required>
+        <small class="field-hint">Tage vor Vertragsende, ab denen eine Benachrichtigung erzeugt wird.</small>
+      </label>
+    </div>
+  </section>
+
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Aufwandserfassung und Satzbasis</h2>
+    <div class="form-section-grid">
+      <label>
+        <span>Erfassungseinheit und Berechnungssaetze <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <select name="billing_rate_unit" required>
+          <option value="day" {% if form.billing_rate_unit == 'day' %}selected{% endif %}>Tage und Tagessaetze</option>
+          <option value="hour" {% if form.billing_rate_unit == 'hour' %}selected{% endif %}>Stunden und Stundensaetze</option>
+        </select>
+        <small class="field-hint">Steuert Aufwandserfassung, Dienstleistungssaetze und Tabellenanzeigen.</small>
+      </label>
+      <label>
+        <span>Stunden pro Arbeitstag <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <input name="workday_hours" inputmode="decimal" value="{{ form.workday_hours }}" required>
+        <small class="field-hint">Standard: 8 Stunden entsprechen einem Arbeitstag.</small>
+      </label>
+    </div>
+  </section>
+
+  <div class="form-actions span-full">
+    <button class="button primary" type="submit">Einstellungen speichern</button>
+  </div>
+</form>
+
+{% if is_superadmin %}
+<section class="form-grid sectioned-form">
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Datenexport</h2>
+    <p class="field-hint">Exportiert alle Fach-, Vertrags-, Abrechnungs- und Verwaltungsdaten als Excel-Datei. Passwort-Hashes werden nicht exportiert; PDF- und Logo-Dateien werden nicht eingebettet, ihre Dateinamen stehen in den Tabellen.</p>
+    <div class="form-actions">
+      <a class="button secondary" href="/settings/export.xlsx">Excel-Export herunterladen</a>
+    </div>
+  </section>
+</section>
+{% endif %}
+{% endblock %}

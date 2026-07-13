@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Dynamisches Datenmodell</p>
+    <h1>{{ form_title }}</h1>
+  </div>
+  <a class="button subtle" href="{{ cancel_url }}">Zurueck</a>
+</section>
+
+{% if error %}
+<div class="flash error">{{ error }}</div>
+{% endif %}
+
+<form class="form-grid" method="post" action="{{ form_action }}">
+  <label>
+    <span>Zielobjekt</span>
+    {% if target_locked %}
+    <input type="hidden" name="target_type" value="{{ form.target_type }}">
+    <select disabled>
+      {% for key, label in target_types.items() %}
+      <option value="{{ key }}" {% if form.target_type == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <small>Das Zielobjekt kann nicht geaendert werden, solange Werte fuer dieses Merkmal existieren.</small>
+    {% else %}
+    <select name="target_type" required>
+      {% for key, label in target_types.items() %}
+      <option value="{{ key }}" {% if form.target_type == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+  </label>
+  <label>
+    <span>Schluessel</span>
+    <input name="key" value="{{ form.key }}" required>
+  </label>
+  <label>
+    <span>Anzeigename</span>
+    <input name="name" value="{{ form.name }}" required>
+  </label>
+  <label>
+    <span>Datentyp</span>
+    <select name="data_type" required>
+      {% for key, label in data_types.items() %}
+      <option value="{{ key }}" {% if form.data_type == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="checkbox-label">
+    <input name="is_standard" type="checkbox" value="true" {% if form.is_standard %}checked{% endif %}>
+    <span>Standard</span>
+  </label>
+  <div class="form-actions span-2">
+    <a class="button subtle" href="{{ cancel_url }}">Abbrechen</a>
+    <button class="button primary" type="submit">Merkmal speichern</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}{{ invoice.invoice_number }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Rechnung</p>
+    <h1>{{ invoice.invoice_number }}</h1>
+  </div>
+  <div class="page-actions">
+    <a class="button subtle" href="/billing">Zurueck</a>
+    {% if invoice.status == 'draft' %}
+    <form method="post" action="/invoices/{{ invoice.id }}/delete">
+      <button class="button danger" type="submit">Entwurf loeschen</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+<section class="detail-layout">
+  <div class="detail-panel">
+    <div class="detail-header">
+      <div>
+        <span class="status {{ invoice.status }}">{{ invoice.status | status_label }}</span>
+        <h2>{{ invoice.company_name }}</h2>
+      </div>
+      <strong>{{ (invoice.gross_total_cents or invoice.total_cents) | money(invoice.currency) }}</strong>
+    </div>
+
+    <dl class="detail-grid">
+      <div><dt>Vertrag</dt><dd><a href="/contracts/{{ invoice.contract_id }}">{{ invoice.contract_number }}</a> - {{ invoice.contract_title }}</dd></div>
+      <div><dt>Zeitraum</dt><dd>{{ invoice.period_start | date_de }} - {{ invoice.period_end | date_de }}</dd></div>
+      <div><dt>Lizenzpositionen</dt><dd>{{ 'Ja' if invoice.include_licenses else 'Nein' }}</dd></div>
+      <div><dt>Dienstleistungen</dt><dd>{{ 'Ja' if invoice.include_services else 'Nein' }}</dd></div>
+      <div><dt>Variable Kostensaetze</dt><dd>{{ 'Ja' if invoice.include_variable_costs else 'Nein' }}</dd></div>
+      <div><dt>Pauschalen</dt><dd>{{ 'Ja' if invoice.include_flat_fees else 'Nein' }}</dd></div>
+      <div><dt>DATEV-Rechnungsnummer</dt><dd>{{ invoice.datev_invoice_number or "-" }}</dd></div>
+      <div><dt>DATEV-Rechnungsdatum</dt><dd>{{ invoice.datev_invoice_date | date_de }}</dd></div>
+      <div><dt>Umsatzsteuer</dt><dd>{{ invoice.vat_treatment | vat_treatment_label }}{% if invoice.vat_treatment == 'standard' %} ({{ invoice.vat_rate_percent or '19' }} %){% endif %}</dd></div>
+      <div><dt>Netto</dt><dd>{{ invoice.total_cents | money(invoice.currency) }}</dd></div>
+      <div><dt>USt</dt><dd>{{ invoice.vat_cents | money(invoice.currency) }}</dd></div>
+      <div><dt>Brutto</dt><dd>{{ (invoice.gross_total_cents or invoice.total_cents) | money(invoice.currency) }}</dd></div>
+      <div><dt>Rechnungs-PDF</dt><dd>{% if invoice.document_url %}<a href="{{ invoice.document_url }}">PDF oeffnen</a>{% else %}-{% endif %}</dd></div>
+    </dl>
+  </div>
+
+  <aside class="workflow-panel">
+    <h2>DATEV-Hinweis</h2>
+    <p class="muted">Diese Rechnung erzeugt bewusst kein PDF. Sie dient als gepruefte Datenaggregation fuer die externe Rechnungserstellung.</p>
+    {% if finalize_error %}
+    <p class="alert">{{ finalize_error }}</p>
+    {% endif %}
+    {% if invoice.status == 'draft' %}
+    <form class="stack datev-finalize-form" method="post" action="/invoices/{{ invoice.id }}/finalize">
+      <label>
+        <span>DATEV-Rechnungsnummer</span>
+        <input name="datev_invoice_number" value="{{ form.datev_invoice_number or invoice.datev_invoice_number or '' }}" required>
+      </label>
+      <label>
+        <span>DATEV-Rechnungsdatum</span>
+        <input name="datev_invoice_date" type="date" value="{{ form.datev_invoice_date or invoice.datev_invoice_date or today }}" required>
+      </label>
+      <button class="button primary" type="submit">Rechnung finalisieren</button>
+    </form>
+    {% else %}
+    <dl class="detail-grid compact-detail-grid">
+      <div><dt>DATEV-Rechnungsnummer</dt><dd>{{ invoice.datev_invoice_number or "-" }}</dd></div>
+      <div><dt>DATEV-Rechnungsdatum</dt><dd>{{ invoice.datev_invoice_date | date_de }}</dd></div>
+    </dl>
+    {% endif %}
+    <hr>
+    <h2>Rechnungs-PDF</h2>
+    {% if document_error %}
+    <p class="alert">{{ document_error }}</p>
+    {% endif %}
+    {% if invoice.document_url %}
+    <p><a class="button secondary" href="{{ invoice.document_url }}">PDF oeffnen</a></p>
+    {% endif %}
+    <form class="stack" method="post" action="/invoices/{{ invoice.id }}/document" enctype="multipart/form-data">
+      <label>
+        <span>DATEV-PDF hochladen</span>
+        <input name="document" type="file" accept=".pdf,application/pdf" required>
+      </label>
+      <button class="button secondary" type="submit">{% if invoice.document_url %}PDF ersetzen{% else %}PDF hochladen{% endif %}</button>
+    </form>
+  </aside>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Positionen</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Typ</th>
+          <th>DATEV</th>
+          <th>Beschreibung</th>
+          <th>Menge</th>
+          <th>Betrag netto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in lines %}
+        <tr>
+          <td>{{ line.item_type | item_type_label }}</td>
+          <td>{{ line.datev_account or "-" }}</td>
+          <td><div class="rich-text-content compact">{{ line.description | rich_text }}</div></td>
+          <td data-aggregate-value="{{ line.aggregate_quantity_value }}" data-aggregate-suffix="{{ line.aggregate_quantity_suffix }}">{{ line.quantity_text }}</td>
+          <td>{{ line.amount_cents | money(invoice.currency) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if linked_entries %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Verknuepfte Stunden</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Zeitraum</th>
+          <th>Leistung</th>
+          <th>Benutzer</th>
+          <th>Aufwand</th>
+          <th>Beschreibung</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in linked_entries %}
+        <tr>
+          <td>{{ (entry.start_date or entry.work_date) | date_de }} - {{ (entry.end_date or entry.work_date) | date_de }}</td>
+          <td>{{ entry.service_name }}<br><span class="muted">{{ entry.work_item_type }}</span></td>
+          <td>{{ entry.user_name }}</td>
+          <td>{{ entry.hours | work_quantity }}</td>
+          <td>
+            {% if entry.description %}
+            <details class="table-details">
+              <summary>Anzeigen</summary>
+              <div class="rich-text-content compact">{{ entry.description | rich_text }}</div>
+            </details>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td><span class="status {{ entry.status }}">{{ entry.status | status_label }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Abrechnung - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Datenaggregation</p>
+    <h1>Abrechnung</h1>
+  </div>
+</section>
+
+<form class="billing-filter-panel" method="get" action="/billing">
+  <div class="billing-period-fields">
+    <label>
+      <span>Zeitraum von</span>
+      <input name="period_start" type="date" value="{{ period_start }}" required>
+    </label>
+    <label>
+      <span>Zeitraum bis</span>
+      <input name="period_end" type="date" value="{{ period_end }}" required>
+    </label>
+  </div>
+
+  <fieldset class="billing-type-fieldset">
+    <legend>Leistungsgruppen</legend>
+    <input type="hidden" name="include_licenses" value="false">
+    <label class="billing-toggle">
+      <input name="include_licenses" type="checkbox" value="true" {% if include_licenses %}checked{% endif %}>
+      <span>Lizenzen</span>
+    </label>
+    <input type="hidden" name="include_services" value="false">
+    <label class="billing-toggle">
+      <input name="include_services" type="checkbox" value="true" {% if include_services %}checked{% endif %}>
+      <span>Dienstleistungen</span>
+    </label>
+    <input type="hidden" name="include_variable_costs" value="false">
+    <label class="billing-toggle">
+      <input name="include_variable_costs" type="checkbox" value="true" {% if include_variable_costs %}checked{% endif %}>
+      <span>Variable Kostensaetze</span>
+    </label>
+    <input type="hidden" name="include_flat_fees" value="false">
+    <label class="billing-toggle">
+      <input name="include_flat_fees" type="checkbox" value="true" {% if include_flat_fees %}checked{% endif %}>
+      <span>Pauschalen</span>
+    </label>
+  </fieldset>
+
+  <div class="billing-filter-actions">
+    <button class="button secondary" type="submit">Aktualisieren</button>
+  </div>
+</form>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Abrechenbare Positionen</h2>
+    <strong>{{ preview_total | money('EUR') }}</strong>
+  </div>
+
+  {% for group in billing_groups %}
+  <details class="billing-group" {% if loop.first %}open{% endif %}>
+    <summary class="billing-group-summary">
+      <div>
+        <h3><a href="/contracts/{{ group.contract.id }}">{{ group.contract.contract_number }}</a></h3>
+        <span class="muted">{{ group.contract.company_name }} - {{ group.contract.title }}</span>
+      </div>
+      <strong>{{ group.total_cents | money(group.contract.currency) }}</strong>
+    </summary>
+    <div class="billing-group-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Auswahl</th>
+              <th>Typ</th>
+              <th>DATEV</th>
+              <th>Beschreibung</th>
+              <th>Menge</th>
+              <th>Betrag</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in group.lines %}
+            <tr>
+              <td>
+                <label class="row-check" aria-label="Position auswaehlen">
+                  <input name="selected_line_keys" type="checkbox" value="{{ line.selection_key }}" checked form="billing-form-{{ group.contract.id }}">
+                </label>
+              </td>
+              <td>
+                {{ line.item_type | item_type_label }}
+              </td>
+              <td>{{ line.datev_account or "-" }}</td>
+              <td><div class="rich-text-content compact">{{ line.description | rich_text }}</div></td>
+              <td>{{ line.quantity_text }}</td>
+              <td>{{ line.amount_cents | money(group.contract.currency) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <form id="billing-form-{{ group.contract.id }}" class="form-actions billing-actions" method="post" action="/billing/create">
+        <input type="hidden" name="contract_id" value="{{ group.contract.id }}">
+        <input type="hidden" name="period_start" value="{{ period_start }}">
+        <input type="hidden" name="period_end" value="{{ period_end }}">
+        {% if include_licenses %}<input type="hidden" name="include_licenses" value="true">{% endif %}
+        {% if include_services %}<input type="hidden" name="include_services" value="true">{% endif %}
+        {% if include_variable_costs %}<input type="hidden" name="include_variable_costs" value="true">{% endif %}
+        {% if include_flat_fees %}<input type="hidden" name="include_flat_fees" value="true">{% endif %}
+        <button class="button primary" type="submit">Ausgewaehlte Positionen abrechnen</button>
+      </form>
+    </div>
+  </details>
+  {% else %}
+  <p class="empty">Keine abrechenbaren Positionen im gewaehlten Zeitraum.</p>
+  {% endfor %}
+</section>
+
+{% if potential_bonus_groups %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Potenzielle Erfolgsboni</h2>
+    <strong>{{ potential_bonus_groups | length }} Vertrag{% if potential_bonus_groups | length != 1 %}e{% endif %}</strong>
+  </div>
+
+  {% for group in potential_bonus_groups %}
+  <details class="billing-group">
+    <summary class="billing-group-summary">
+      <div>
+        <h3><a href="/contracts/{{ group.contract.id }}?tab=flat_fees">{{ group.contract.contract_number }}</a></h3>
+        <span class="muted">{{ group.contract.company_name }} - {{ group.contract.title }}</span>
+      </div>
+      <strong>{{ group.total_cents | money(group.contract.currency) }}</strong>
+    </summary>
+    <div class="billing-group-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>DATEV</th>
+              <th>Erfolgsbedingung</th>
+              <th>Erwarteter Erfolg</th>
+              <th>Betrag</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in group.lines %}
+            <tr>
+              <td>{{ line.name }}</td>
+              <td>{{ line.datev_account or "-" }}</td>
+              <td>{{ line.success_condition or "-" }}</td>
+              <td>{{ line.reference_date | date_de }}</td>
+              <td>{{ line.amount_cents | money(group.contract.currency) }}</td>
+              <td><span class="status {{ line.approval_status }}">{{ line.approval_status | flat_fee_approval_label }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Rechnungen</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Nummer</th>
+          <th>DATEV-Nr.</th>
+          <th>DATEV-Datum</th>
+          <th>Unternehmen</th>
+          <th>Vertrag</th>
+          <th>Zeitraum</th>
+          <th>Netto</th>
+          <th>Brutto</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for invoice in invoices %}
+        <tr>
+          <td><a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_number }}</a></td>
+          <td>{{ invoice.datev_invoice_number or "-" }}</td>
+          <td>{{ invoice.datev_invoice_date | date_de }}</td>
+          <td>{{ invoice.company_name }}</td>
+          <td>{{ invoice.contract_number }}</td>
+          <td>{{ invoice.period_start | date_de }} - {{ invoice.period_end | date_de }}</td>
+          <td>{{ invoice.total_cents | money(invoice.currency) }}</td>
+          <td>{{ (invoice.gross_total_cents or invoice.total_cents) | money(invoice.currency) }}</td>
+          <td><span class="status {{ invoice.status }}">{{ invoice.status | status_label }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="empty">Noch keine Rechnungen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

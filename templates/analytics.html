@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Analytics - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Analysen</p>
+    <h1>Analytics</h1>
+  </div>
+  <form method="get" action="/analytics" class="year-picker">
+    <select name="year" onchange="this.form.submit()">
+      {% for available_year in available_years %}
+      <option value="{{ available_year }}" {% if available_year == year %}selected{% endif %}>{{ available_year }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Monatsverlauf Umsatz {{ year }}</h2>
+    <span class="muted">Finalisierte Umsaetze nach DATEV-Rechnungsdatum</span>
+  </div>
+  <div class="chart-canvas-wrap">
+    <canvas data-analytics-chart="revenue-trend"></canvas>
+  </div>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Umsatzbestandteile {{ year }}</h2>
+    <span class="muted">Nach DATEV-Rechnungsdatum: Lizenzen, Dienstleistungen, Pauschalen und variable Kostensaetze</span>
+  </div>
+  <div class="chart-canvas-wrap">
+    <canvas data-analytics-chart="revenue-components"></canvas>
+  </div>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Jahresvergleich Umsatz</h2>
+    <span class="muted">{{ year - 1 }} und {{ year }} je Monat, Differenz auf Sekundaerachse</span>
+  </div>
+  <div class="chart-canvas-wrap tall">
+    <canvas data-analytics-chart="year-comparison"></canvas>
+  </div>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>MRR und ARR</h2>
+    <span class="muted">Monatliche Sicht auf aktive Lizenzvertraege, ARR auf Sekundaerachse</span>
+  </div>
+  <div class="chart-canvas-wrap">
+    <canvas data-analytics-chart="recurring-revenue"></canvas>
+  </div>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Lizenzanzahl und durchschnittlicher Lizenzumsatz</h2>
+    <span class="muted">Lizenzanzahl als Linie, durchschnittlicher Lizenzumsatz als Balken</span>
+  </div>
+  <div class="chart-canvas-wrap">
+    <canvas data-analytics-chart="active-licenses"></canvas>
+  </div>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Lizenzanzahl nach Katalogart</h2>
+    <span class="muted">Monatlicher Verlauf der Lizenzanzahl je Lizenzart</span>
+  </div>
+  <div class="chart-canvas-wrap">
+    <canvas data-analytics-chart="license-types"></canvas>
+  </div>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Rechnungen pro Monat</h2>
+    <span class="muted">Anzahl als Linie, durchschnittliche Rechnungssumme auf Sekundaerachse</span>
+  </div>
+  <div class="chart-canvas-wrap">
+    <canvas data-analytics-chart="invoice-activity"></canvas>
+  </div>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Top 10 Kunden nach Umsatz</h2>
+    <span class="muted">Finalisierter Umsatz im Jahr {{ year }} nach DATEV-Rechnungsdatum</span>
+  </div>
+  <div class="bar-list">
+    {% for company in top_companies %}
+    <div class="bar-row">
+      <span>{{ company.company_name }}</span>
+      <div class="bar-track">
+        <i class="bar issued" style="width: {{ company.finalized_percent }}%"></i>
+      </div>
+      <strong>{{ company.finalized_cents | money }}</strong>
+    </div>
+    {% else %}
+    <p class="empty">Noch keine Abrechnung im Jahr vorhanden.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Gebuchte Stunden</h2>
+    <span class="muted">Monatlicher Verlauf aller Stundenbuchungen</span>
+  </div>
+  <div class="chart-canvas-wrap">
+    <canvas data-analytics-chart="booked-hours"></canvas>
+  </div>
+</section>
+<script id="analytics-chart-data" type="application/json">{{ analytics_charts | tojson }}</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+<script src="/static/analytics-charts.js"></script>
+{% endblock %}

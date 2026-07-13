@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Charakteristiken - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Dynamisches Datenmodell</p>
+    <h1>Charakteristiken</h1>
+  </div>
+</section>
+
+<form class="form-grid" method="post" action="/characteristics">
+  <label>
+    <span>Zielobjekt</span>
+    <select name="target_type">
+      {% for key, label in target_types.items() %}
+      <option value="{{ key }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Schluessel</span>
+    <input name="key" placeholder="sla_level" required>
+  </label>
+  <label>
+    <span>Anzeigename</span>
+    <input name="name" placeholder="SLA-Stufe" required>
+  </label>
+  <label>
+    <span>Datentyp</span>
+    <select name="data_type">
+      {% for key, label in data_types.items() %}
+      <option value="{{ key }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="checkbox-label">
+    <input name="is_standard" type="checkbox" value="true">
+    <span>Standard</span>
+  </label>
+  <div class="form-actions span-2">
+    <button class="button primary" type="submit">Charakteristik speichern</button>
+  </div>
+</form>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Zielobjekt</th>
+        <th>Schluessel</th>
+        <th>Name</th>
+        <th>Datentyp</th>
+        <th>Standard</th>
+        <th>Werte</th>
+        <th>Aktion</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for definition in definitions %}
+      <tr>
+        <td>{{ target_types[definition.target_type] }}</td>
+        <td>{{ definition.key }}</td>
+        <td>{{ definition.name }}</td>
+        <td>{{ data_types[definition.data_type] }}</td>
+        <td><span class="status {{ 'active' if definition.is_standard else 'inactive' }}">{{ 'Ja' if definition.is_standard else 'Nein' }}</span></td>
+        <td>{{ definition.usage_count }}</td>
+        <td class="action-cell">
+          <details class="row-action-menu">
+            <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+            <div class="row-action-list">
+              <a class="button secondary" href="/characteristics/{{ definition.id }}/edit">Bearbeiten</a>
+              <form class="inline-row-actions" method="post" action="/characteristics/{{ definition.id }}/delete">
+                <button class="button danger" type="submit">Loeschen</button>
+              </form>
+            </div>
+          </details>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty">Noch keine Charakteristiken vorhanden.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

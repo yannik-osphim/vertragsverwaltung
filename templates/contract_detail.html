@@ -1,0 +1,502 @@
+{% extends "base.html" %}
+{% block title %}{{ contract.contract_number }} - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Vertrag</p>
+    <h1>{{ contract.contract_number }}</h1>
+  </div>
+  <div class="page-actions">
+    {% if has_permission('contracts.manage') %}
+    <a class="button secondary" href="/contracts/{{ contract.id }}/edit">Bearbeiten</a>
+    {% endif %}
+    {% if is_superadmin and contract_can_delete %}
+    <form method="post" action="/contracts/{{ contract.id }}/delete">
+      <button class="button danger" type="submit">Loeschen</button>
+    </form>
+    {% endif %}
+    <a class="button secondary" href="/billing?contract_id={{ contract.id }}">Abrechnung vorbereiten</a>
+    <a class="button subtle" href="/contracts">Zurueck</a>
+  </div>
+</section>
+
+<nav class="tabs">
+  <a class="tab-link {% if active_contract_tab == 'overview' %}active{% endif %}" href="/contracts/{{ contract.id }}?tab=overview">Uebersicht</a>
+  <a class="tab-link {% if active_contract_tab == 'invoices' %}active{% endif %}" href="/contracts/{{ contract.id }}?tab=invoices">Finalisierte Rechnungen</a>
+  <a class="tab-link {% if active_contract_tab == 'licenses' %}active{% endif %}" href="/contracts/{{ contract.id }}?tab=licenses">Lizenzen</a>
+  <a class="tab-link {% if active_contract_tab == 'services' %}active{% endif %}" href="/contracts/{{ contract.id }}?tab=services">Dienstleistungen</a>
+  <a class="tab-link {% if active_contract_tab == 'flat_fees' %}active{% endif %}" href="/contracts/{{ contract.id }}?tab=flat_fees">Pauschalen</a>
+  <a class="tab-link {% if active_contract_tab == 'variable_costs' %}active{% endif %}" href="/contracts/{{ contract.id }}?tab=variable_costs">Variable Kostensaetze</a>
+  <a class="tab-link {% if active_contract_tab == 'time_entries' %}active{% endif %}" href="/contracts/{{ contract.id }}?tab=time_entries">Stunden</a>
+</nav>
+
+{% if active_contract_tab == 'overview' %}
+<section class="detail-panel contract-overview-panel">
+  <div class="detail-header">
+    <div>
+      <span class="status {{ contract.status }}">{{ contract.status | status_label }}</span>
+      <h2>{{ contract.title }}</h2>
+    </div>
+    <strong>{{ contract.company_name }}</strong>
+  </div>
+
+  <dl class="detail-grid">
+    <div><dt>Unternehmen</dt><dd><a href="/companies/{{ contract.company_id }}">{{ contract.company_name }}</a></dd></div>
+    <div><dt>Laufzeit</dt><dd>{{ contract.start_date | date_de }} - {{ contract.end_date | date_de }}</dd></div>
+    <div><dt>Lizenz-Default</dt><dd>{{ contract.license_billing_frequency | frequency_label }}</dd></div>
+    <div><dt>Dienstleistungs-Default</dt><dd>{{ contract.service_billing_frequency | frequency_label }}</dd></div>
+    <div><dt>Variabler Default</dt><dd>{{ contract.variable_billing_frequency | frequency_label }}</dd></div>
+    <div><dt>Standard-{{ rate_unit_label }}</dt><dd>{{ contract.service_hourly_rate_cents | rate_money(contract.currency) }}</dd></div>
+    <div><dt>Lizenz-Preissteigerung</dt><dd>{{ contract.license_price_increase_percent or "8" }} % ab 2. Jahr</dd></div>
+    <div><dt>Umsatzsteuer</dt><dd>{{ contract.vat_treatment | vat_treatment_label }}</dd></div>
+    <div><dt>Bestellnummer Kunde</dt><dd>{{ contract.customer_order_number or "-" }}</dd></div>
+    <div><dt>ERP-Referenznummer</dt><dd>{{ contract.erp_reference_number or "-" }}</dd></div>
+    <div><dt>Ansprechpartner</dt><dd>{{ contract.contact_name or "-" }}<br><span class="muted">{{ contract.contact_email or "-" }} / {{ contract.contact_phone or "-" }}</span></dd></div>
+    <div><dt>Rechnungsempfaenger</dt><dd>{{ contract.billing_recipient_name or "-" }}<br><span class="muted">{{ contract.billing_recipient_email or "-" }} / {{ contract.billing_recipient_phone or "-" }}</span></dd></div>
+    <div><dt>DL offen freigegeben</dt><dd>{{ service_volume.approved_unbilled_cents | money(contract.currency) }} / {{ service_volume.approved_unbilled_hours | work_quantity }}</dd></div>
+    <div><dt>DL offen eingereicht</dt><dd>{{ service_volume.submitted_unbilled_cents | money(contract.currency) }} / {{ service_volume.submitted_unbilled_hours | work_quantity }}</dd></div>
+    <div><dt>Dokument</dt><dd>{% if contract.document_url %}<a href="{{ contract.document_url }}">PDF oeffnen</a>{% else %}-{% endif %}</dd></div>
+  </dl>
+
+  {% if contract.notes %}
+  <div class="notes">
+    <h3>Notizen</h3>
+    <div class="rich-text-content">{{ contract.notes | rich_text }}</div>
+  </div>
+  {% endif %}
+
+  <div class="history">
+    <h3>Charakteristiken</h3>
+    <div class="chip-list">
+      {% for item in characteristics %}
+      <span class="chip">{{ item.name }}: {{ item.value_text or "-" }}</span>
+      {% else %}
+      <span class="muted">Noch keine Merkmale gesetzt.</span>
+      {% endfor %}
+    </div>
+    {% if has_permission('characteristics.manage') and characteristic_definitions %}
+    <form class="inline-form" method="post" action="/contracts/{{ contract.id }}/characteristics">
+      <select name="definition_id">
+        {% for definition in characteristic_definitions %}
+        <option value="{{ definition.id }}">{{ definition.name }}</option>
+        {% endfor %}
+      </select>
+      <input name="value_text" placeholder="Wert" required>
+      <button class="button secondary" type="submit">Setzen</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if contract.document_url %}
+  <div class="history">
+    <h3>Vertragsdokument</h3>
+    <object class="pdf-viewer" data="{{ contract.document_url }}" type="application/pdf">
+      <p>Das PDF kann <a href="{{ contract.document_url }}">hier geoeffnet</a> werden.</p>
+    </object>
+  </div>
+  {% endif %}
+</section>
+
+<section class="metric-grid">
+  <article class="metric">
+    <span>Lizenzen</span>
+    <strong>{{ licenses | length }}</strong>
+  </article>
+  <article class="metric">
+    <span>Dienstleistungen</span>
+    <strong>{{ services | length }}</strong>
+  </article>
+  <article class="metric warning">
+    <span>DL offen freigegeben</span>
+    <strong>{{ service_volume.approved_unbilled_cents | money(contract.currency) }}</strong>
+    <small>{{ service_volume.approved_unbilled_hours | work_quantity }}</small>
+  </article>
+  <article class="metric">
+    <span>Finalisierte Rechnungen</span>
+    <strong>{{ invoices | length }}</strong>
+  </article>
+</section>
+{% endif %}
+
+{% if active_contract_tab == 'invoices' %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Finalisierte Rechnungen</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Interne Nummer</th>
+          <th>DATEV-Nr.</th>
+          <th>DATEV-Datum</th>
+          <th>Zeitraum</th>
+          <th>Netto</th>
+          <th>Brutto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for invoice in invoices %}
+        <tr>
+          <td><a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_number }}</a></td>
+          <td>{{ invoice.datev_invoice_number or "-" }}</td>
+          <td>{{ invoice.datev_invoice_date | date_de }}</td>
+          <td>{{ invoice.period_start | date_de }} - {{ invoice.period_end | date_de }}</td>
+          <td>{{ invoice.total_cents | money(invoice.currency) }}</td>
+          <td>{{ (invoice.gross_total_cents or invoice.total_cents) | money(invoice.currency) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="empty">Noch keine finalisierten Rechnungen.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if active_contract_tab == 'licenses' %}
+<section class="analytics-band" id="licenses">
+  <div class="section-title">
+    <h2>Lizenzen</h2>
+    {% if has_permission('contracts.manage') %}
+    <a class="button secondary" href="/contracts/{{ contract.id }}/licenses/new">Lizenz hinzufuegen</a>
+    {% endif %}
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Beschreibung</th>
+          <th>DATEV</th>
+          <th>Einzelkosten</th>
+          <th>Menge</th>
+          <th>Jahreswert</th>
+          <th>Abrechnung</th>
+          <th>Start</th>
+          <th>Ende</th>
+          <th>Status</th>
+          {% if is_superadmin %}<th>Aktion</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for license in licenses %}
+        <tr>
+          <td>
+            {{ license.name }}
+            {% if license.characteristics %}
+            <div class="chip-list table-chips">
+              {% for item in license.characteristics %}
+              <span class="chip">{{ item.name }}: {{ item.value_text or "-" }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </td>
+          <td><div class="rich-text-content compact">{{ license.notes | rich_text }}</div></td>
+          <td>{{ license.datev_account or "-" }}</td>
+          <td>{{ license.annual_amount_cents | money(contract.currency) }}</td>
+          <td>{{ license.quantity }}</td>
+          <td>{{ license.annual_total_cents | money(contract.currency) }}</td>
+          <td>{{ license.billing_summary }}</td>
+          <td>{{ license.start_date | date_de }}</td>
+          <td>{{ license.end_date | date_de }}</td>
+          <td><span class="status {{ license.status }}">{{ license.status | status_label }}</span></td>
+          {% if is_superadmin %}
+          <td class="action-cell">
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <a class="button secondary" href="/contracts/{{ contract.id }}/licenses/{{ license.id }}/edit">Bearbeiten</a>
+                <form class="inline-row-actions" method="post" action="/contracts/{{ contract.id }}/licenses/{{ license.id }}/delete">
+                  <button class="button danger" type="submit">Entfernen</button>
+                </form>
+              </div>
+            </details>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{% if is_superadmin %}11{% else %}10{% endif %}" class="empty">Keine Lizenzen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if active_contract_tab == 'services' %}
+<section class="analytics-band" id="services">
+  <div class="section-title">
+    <h2>Dienstleistungen</h2>
+    {% if has_permission('contracts.manage') %}
+    <a class="button secondary" href="/contracts/{{ contract.id }}/services/new">Dienstleistung hinzufuegen</a>
+    {% endif %}
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Beschreibung</th>
+          <th>DATEV</th>
+          <th>{{ rate_unit_label }}</th>
+          <th>Max. Umfang</th>
+          <th>Abrechnung</th>
+          <th>Status</th>
+          {% if is_superadmin %}<th>Aktion</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for service in services %}
+        <tr>
+          <td>
+            {{ service.name }}
+            {% if service.characteristics %}
+            <div class="chip-list table-chips">
+              {% for item in service.characteristics %}
+              <span class="chip">{{ item.name }}: {{ item.value_text or "-" }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </td>
+          <td><div class="rich-text-content compact">{{ service.notes | rich_text }}</div></td>
+          <td>{{ service.datev_account or "-" }}</td>
+          <td>{{ service.hourly_rate_cents | rate_money(contract.currency) }}</td>
+          <td>
+            {% if service.contracted_hours is not none %}
+            {{ service.contracted_hours | hours_de }} h
+            {% if service.contracted_days is not none %}
+            <br><span class="muted">{{ service.contracted_days | hours_de }} AT</span>
+            {% endif %}
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td>{{ service.billing_frequency | frequency_label }}</td>
+          <td><span class="status {{ service.status }}">{{ service.status | status_label }}</span></td>
+          {% if is_superadmin %}
+          <td class="action-cell">
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <a class="button secondary" href="/contracts/{{ contract.id }}/services/{{ service.id }}/edit">Bearbeiten</a>
+                <form class="inline-row-actions" method="post" action="/contracts/{{ contract.id }}/services/{{ service.id }}/delete">
+                  <button class="button danger" type="submit">Entfernen</button>
+                </form>
+              </div>
+            </details>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{% if is_superadmin %}8{% else %}7{% endif %}" class="empty">Keine Dienstleistungen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if active_contract_tab == 'flat_fees' %}
+<section class="analytics-band" id="flat-fees">
+  <div class="section-title">
+    <h2>Pauschalen</h2>
+    {% if has_permission('contracts.manage') %}
+    <a class="button secondary" href="/contracts/{{ contract.id }}/flat-fees/new">Pauschale hinzufuegen</a>
+    {% endif %}
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Art</th>
+          <th>Beschreibung</th>
+          <th>Erfolgsbedingung</th>
+          <th>DATEV</th>
+          <th>Betrag</th>
+          <th>Abrechnung</th>
+          <th>Zeitraum</th>
+          <th>Bonus-Freigabe</th>
+          <th>Status</th>
+          {% if is_superadmin %}<th>Aktion</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in flat_fees %}
+        <tr>
+          <td>
+            {{ item.name }}
+            {% if item.characteristics %}
+            <div class="chip-list table-chips">
+              {% for characteristic in item.characteristics %}
+              <span class="chip">{{ characteristic.name }}: {{ characteristic.value_text or "-" }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </td>
+          <td>{{ item.fee_kind | flat_fee_kind_label }}</td>
+          <td><div class="rich-text-content compact">{{ item.notes | rich_text }}</div></td>
+          <td>
+            {% if item.fee_kind == 'success_bonus' %}
+            {{ item.success_condition or "-" }}
+            {% if item.expected_success_date %}
+            <br><span class="muted">Erwartet: {{ item.expected_success_date | date_de }}</span>
+            {% endif %}
+            {% if item.success_date %}
+            <br><span class="muted">Eingetreten: {{ item.success_date | date_de }}</span>
+            {% endif %}
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td>{{ item.datev_account or "-" }}</td>
+          <td>{{ item.amount_cents | money(contract.currency) }}</td>
+          <td>{{ item.billing_frequency | frequency_label }}</td>
+          <td>{{ item.start_date | date_de }} - {{ item.end_date | date_de }}</td>
+          <td><span class="status {{ item.approval_status }}">{{ item.approval_status | flat_fee_approval_label }}</span></td>
+          <td><span class="status {{ item.status }}">{{ item.status | status_label }}</span></td>
+          {% if is_superadmin %}
+          <td class="action-cell">
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <a class="button secondary" href="/contracts/{{ contract.id }}/flat-fees/{{ item.id }}/edit">Bearbeiten</a>
+                {% if item.fee_kind == 'success_bonus' and item.approval_status != 'approved' %}
+                <form class="inline-row-actions" method="post" action="/contracts/{{ contract.id }}/flat-fees/{{ item.id }}/approval">
+                  <input type="hidden" name="approval_status" value="approved">
+                  <button class="button success" type="submit">Freigeben</button>
+                </form>
+                {% endif %}
+                {% if item.fee_kind == 'success_bonus' and item.approval_status != 'rejected' %}
+                <form class="inline-row-actions" method="post" action="/contracts/{{ contract.id }}/flat-fees/{{ item.id }}/approval">
+                  <input type="hidden" name="approval_status" value="rejected">
+                  <button class="button warning" type="submit">Verwerfen</button>
+                </form>
+                {% endif %}
+                {% if item.fee_kind == 'success_bonus' and item.approval_status != 'pending' %}
+                <form class="inline-row-actions" method="post" action="/contracts/{{ contract.id }}/flat-fees/{{ item.id }}/approval">
+                  <input type="hidden" name="approval_status" value="pending">
+                  <button class="button secondary" type="submit">Wieder oeffnen</button>
+                </form>
+                {% endif %}
+                <form class="inline-row-actions" method="post" action="/contracts/{{ contract.id }}/flat-fees/{{ item.id }}/delete">
+                  <button class="button danger" type="submit">Entfernen</button>
+                </form>
+              </div>
+            </details>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{% if is_superadmin %}11{% else %}10{% endif %}" class="empty">Keine Pauschalen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if active_contract_tab == 'variable_costs' %}
+<section class="analytics-band" id="variable-costs">
+  <div class="section-title">
+    <h2>Variable Kostensaetze</h2>
+    {% if has_permission('contracts.manage') %}
+    <a class="button secondary" href="/contracts/{{ contract.id }}/variable-costs/new">Kostensatz hinzufuegen</a>
+    {% endif %}
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Beschreibung</th>
+          <th>DATEV</th>
+          <th>Satz</th>
+          <th>Menge</th>
+          <th>Abrechnung</th>
+          <th>Zeitraum</th>
+          <th>Status</th>
+          {% if is_superadmin %}<th>Aktion</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in variable_costs %}
+        <tr>
+          <td>{{ item.name }}</td>
+          <td><div class="rich-text-content compact">{{ (item.description or item.notes) | rich_text }}</div></td>
+          <td>{{ item.datev_account or "-" }}</td>
+          <td>{{ item.rate_cents | money(contract.currency) }}</td>
+          <td>{{ item.quantity | hours_de }} {{ item.unit }}</td>
+          <td>{{ item.billing_frequency | frequency_label }}</td>
+          <td>{{ item.start_date | date_de }} - {{ item.end_date | date_de }}</td>
+          <td><span class="status {{ item.status }}">{{ item.status | status_label }}</span></td>
+          {% if is_superadmin %}
+          <td class="action-cell">
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <a class="button secondary" href="/contracts/{{ contract.id }}/variable-costs/{{ item.id }}/edit">Bearbeiten</a>
+                <form class="inline-row-actions" method="post" action="/contracts/{{ contract.id }}/variable-costs/{{ item.id }}/delete">
+                  <button class="button danger" type="submit">Entfernen</button>
+                </form>
+              </div>
+            </details>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{% if is_superadmin %}9{% else %}8{% endif %}" class="empty">Keine variablen Kostensaetze vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if active_contract_tab == 'time_entries' %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Letzte Stunden auf diesem Vertrag</h2>
+    <a href="/time-entries/new">Stunden erfassen</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Zeitraum</th>
+          <th>Leistung</th>
+          <th>Benutzer</th>
+          <th>Aufwand</th>
+          <th>Beschreibung</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in time_entries %}
+        <tr>
+          <td>{{ (entry.start_date or entry.work_date) | date_de }} - {{ (entry.end_date or entry.work_date) | date_de }}</td>
+          <td>{{ entry.service_name }}<br><span class="muted">{{ entry.work_item_type }}</span></td>
+          <td>{{ entry.user_name }}</td>
+          <td>{{ entry.hours | work_quantity }}</td>
+          <td>
+            {% if entry.description %}
+            <details class="table-details">
+              <summary>Anzeigen</summary>
+              <div class="rich-text-content compact">{{ entry.description | rich_text }}</div>
+            </details>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td><span class="status {{ entry.status }}">{{ entry.status | status_label }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="empty">Keine Stundenbuchungen vorhanden.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
