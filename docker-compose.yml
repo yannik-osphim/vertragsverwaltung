@@ -63,10 +63,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
     depends_on:
       app:
         condition: service_healthy
@@ -74,13 +70,13 @@ services:
       PUBLIC_SITE_ADDRESS: ${PUBLIC_SITE_ADDRESS:-:8000}
       MAX_UPLOAD_SIZE: ${MAX_UPLOAD_SIZE:-50MB}
     ports:
-      - "${PROXY_BIND_IP:-0.0.0.0}:${PROXY_HTTP_PORT:-8000}:8000"
+      - "${PROXY_BIND_IP:-0.0.0.0}:${PROXY_HTTP_PORT:-8000}:${PROXY_CONTAINER_PORT:-8000}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/health >/dev/null"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${PROXY_CONTAINER_PORT:-8000}/health >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3

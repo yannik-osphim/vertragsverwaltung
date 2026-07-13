@@ -63,11 +63,17 @@ Die Proxy-Einstellungen liegen in `.env`:
 
 - `PUBLIC_SITE_ADDRESS=:8000` fuer den aktuellen HTTP-Betrieb auf Port 8000
 - `PROXY_HTTP_PORT=8000` fuer den externen Host-Port
+- `PROXY_CONTAINER_PORT=8000` fuer den Port, auf dem Caddy im Container lauscht
 - `MAX_UPLOAD_SIZE=50MB` fuer Upload-Limits am Proxy
 
-Fuer produktives HTTPS mit eigener Domain kann `PUBLIC_SITE_ADDRESS` auf den
-Hostnamen gesetzt und Caddy entsprechend ueber Port 80/443 betrieben werden.
-Dann sollten auch `SECURE_COOKIES=1` und `FORCE_HTTPS=1` gesetzt werden.
+Wenn der Dienst am Host auf Port 80 erreichbar sein soll, reicht fuer den
+aktuellen HTTP-Betrieb `PROXY_HTTP_PORT=80`. `PUBLIC_SITE_ADDRESS` und
+`PROXY_CONTAINER_PORT` bleiben dabei auf `:8000` bzw. `8000`, weil Caddy intern
+weiter auf Port 8000 lauscht.
+
+Fuer produktives HTTPS mit eigener Domain muss Caddy auf die Domain und die
+passenden Container-/Host-Ports 80/443 umgestellt werden. Dann sollten auch
+`SECURE_COOKIES=1` und `FORCE_HTTPS=1` gesetzt werden.
 
 Vor einem echten produktiven Start sollten mindestens diese Werte angepasst
 werden:
