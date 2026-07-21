@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 from io import BytesIO
 import logging
 import os
+import re
 import secrets
 import shutil
 from collections import defaultdict
@@ -1443,8 +1444,13 @@ if FORCE_HTTPS:
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     if ENABLE_SECURITY_HEADERS:
+        embeddable_pdf = bool(
+            re.fullmatch(r"/contracts/\d+/document", request.url.path)
+            or re.fullmatch(r"/invoices/\d+/document", request.url.path)
+        )
+        frame_ancestors = "'self'" if embeddable_pdf else "'none'"
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN" if embeddable_pdf else "DENY")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         response.headers.setdefault(
@@ -1459,7 +1465,7 @@ async def add_security_headers(request: Request, call_next):
             "frame-src 'self'; "
             "base-uri 'self'; "
             "form-action 'self'; "
-            "frame-ancestors 'none'",
+            f"frame-ancestors {frame_ancestors}",
         )
         if FORCE_HTTPS:
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -1653,7 +1659,9 @@ def breadcrumbs_for_path(path: str) -> list[dict[str, str]]:
 
     if path.startswith("/catalog"):
         items = [{"label": "Verwaltung", "href": "/catalog"}, {"label": "Katalog", "href": "/catalog"}]
-        if "/license-types/" in path and path.endswith("/edit"):
+        if "/types/" in path and path.endswith("/edit"):
+            items.append({"label": "Katalogeintrag bearbeiten", "href": path})
+        elif "/license-types/" in path and path.endswith("/edit"):
             items.append({"label": "Lizenzart bearbeiten", "href": path})
         elif "/service-types/" in path and path.endswith("/edit"):
             items.append({"label": "Dienstleistungsart bearbeiten", "href": path})
@@ -1709,6 +1717,8 @@ def back_url_for_path(path: str, user: dict[str, Any] | None) -> str:
     if path.startswith("/catalog/service-types/"):
         return "/catalog"
     if path.startswith("/catalog/flat-fee-types/"):
+        return "/catalog"
+    if path.startswith("/catalog/types/"):
         return "/catalog"
     parent_paths = {
         "/companies/new": "/companies",
@@ -7927,6 +7937,146 @@ def export_all_data(
     )
 
 
+CATALOG_KIND_OPTIONS = {
+    "license": "Lizenzart",
+    "service": "Dienstleistungsart",
+    "flat_fee": "Pauschalart",
+}
+
+CATALOG_TYPE_META = {
+    "license": {
+        "table": "license_types",
+        "usage_table": "licenses",
+        "usage_column": "license_type_id",
+        "label": "Lizenzart",
+        "not_found": "Lizenzart nicht gefunden.",
+    },
+    "service": {
+        "table": "service_types",
+        "usage_table": "services",
+        "usage_column": "service_type_id",
+        "label": "Dienstleistungsart",
+        "not_found": "Dienstleistungsart nicht gefunden.",
+    },
+    "flat_fee": {
+        "table": "flat_fee_types",
+        "usage_table": "flat_fees",
+        "usage_column": "flat_fee_type_id",
+        "label": "Pauschalart",
+        "not_found": "Pauschalart nicht gefunden.",
+    },
+}
+
+
+def validate_catalog_kind(value: str | None) -> str:
+    kind = (value or "").strip()
+    if kind not in CATALOG_TYPE_META:
+        raise ValueError("Bitte eine gueltige Katalogart auswaehlen.")
+    return kind
+
+
+def catalog_type_usage_count(connection, kind: str, type_id: int) -> int:
+    meta = CATALOG_TYPE_META[kind]
+    return connection.execute(
+        f"SELECT COUNT(*) FROM {meta['usage_table']} WHERE {meta['usage_column']} = ?",
+        (type_id,),
+    ).fetchone()[0]
+
+
+def fetch_catalog_type(connection, kind: str, type_id: int):
+    table = CATALOG_TYPE_META[kind]["table"]
+    return connection.execute(f"SELECT * FROM {table} WHERE id = ?", (type_id,)).fetchone()
+
+
+def catalog_type_duplicate(connection, kind: str, name: str, type_id: int | None = None) -> bool:
+    table = CATALOG_TYPE_META[kind]["table"]
+    if type_id is None:
+        return connection.execute(f"SELECT id FROM {table} WHERE name = ?", (name,)).fetchone() is not None
+    return (
+        connection.execute(
+            f"SELECT id FROM {table} WHERE name = ? AND id != ?",
+            (name, type_id),
+        ).fetchone()
+        is not None
+    )
+
+
+def insert_catalog_type(connection, kind: str, name: str, datev_account: str, description: str, active: int, timestamp: str) -> int:
+    if kind == "service":
+        cursor = connection.execute(
+            """
+            INSERT INTO service_types (
+                name, datev_account, default_hourly_rate_cents,
+                description, active, created_at, updated_at
+            )
+            VALUES (?, ?, 0, ?, ?, ?, ?)
+            """,
+            (name, datev_account, description, active, timestamp, timestamp),
+        )
+    else:
+        table = CATALOG_TYPE_META[kind]["table"]
+        cursor = connection.execute(
+            f"""
+            INSERT INTO {table} (name, datev_account, description, active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (name, datev_account, description, active, timestamp, timestamp),
+        )
+    return cursor.lastrowid
+
+
+def update_catalog_type_record(
+    connection,
+    kind: str,
+    type_id: int,
+    name: str,
+    datev_account: str,
+    description: str,
+    active: int,
+    timestamp: str,
+) -> None:
+    table = CATALOG_TYPE_META[kind]["table"]
+    connection.execute(
+        f"""
+        UPDATE {table}
+        SET name = ?,
+            datev_account = ?,
+            description = ?,
+            active = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (name, datev_account, description, active, timestamp, type_id),
+    )
+
+
+def render_catalog_type_form(
+    request: Request,
+    source_kind: str,
+    type_id: int,
+    form: dict[str, Any],
+    usage_count: int,
+    error: str | None = None,
+    status_code: int = 200,
+):
+    return render(
+        request,
+        "catalog_type_form.html",
+        {
+            "catalog_kind": source_kind,
+            "catalog_kind_options": CATALOG_KIND_OPTIONS,
+            "form_title": "Katalogeintrag bearbeiten",
+            "form_action": f"/catalog/types/{source_kind}/{type_id}/update",
+            "cancel_url": "/catalog",
+            "usage_count": usage_count,
+            "can_change_kind": usage_count == 0,
+            "form": form,
+            "error": error,
+        },
+        status_code=status_code,
+    )
+
+
 @app.get("/catalog")
 def catalog_index(
     request: Request,
@@ -7973,9 +8123,9 @@ def catalog_index(
                 "kind": "license",
                 "kind_label": "Lizenzart",
                 "default_hourly_rate_cents": None,
-                "edit_url": f"/catalog/license-types/{item['id']}/edit",
-                "activate_url": f"/catalog/license-types/{item['id']}/activate",
-                "delete_url": f"/catalog/license-types/{item['id']}/delete",
+                "edit_url": f"/catalog/types/license/{item['id']}/edit",
+                "activate_url": f"/catalog/types/license/{item['id']}/activate",
+                "delete_url": f"/catalog/types/license/{item['id']}/delete",
                 "is_seeded": item["name"] in DEFAULT_LICENSE_TYPE_NAMES,
             }
         )
@@ -7986,9 +8136,9 @@ def catalog_index(
             {
                 "kind": "service",
                 "kind_label": "Dienstleistungsart",
-                "edit_url": f"/catalog/service-types/{item['id']}/edit",
-                "activate_url": f"/catalog/service-types/{item['id']}/activate",
-                "delete_url": f"/catalog/service-types/{item['id']}/delete",
+                "edit_url": f"/catalog/types/service/{item['id']}/edit",
+                "activate_url": f"/catalog/types/service/{item['id']}/activate",
+                "delete_url": f"/catalog/types/service/{item['id']}/delete",
                 "is_seeded": item["name"] in DEFAULT_SERVICE_TYPE_NAMES,
             }
         )
@@ -8000,9 +8150,9 @@ def catalog_index(
                 "kind": "flat_fee",
                 "kind_label": "Pauschalart",
                 "default_hourly_rate_cents": None,
-                "edit_url": f"/catalog/flat-fee-types/{item['id']}/edit",
-                "activate_url": f"/catalog/flat-fee-types/{item['id']}/activate",
-                "delete_url": f"/catalog/flat-fee-types/{item['id']}/delete",
+                "edit_url": f"/catalog/types/flat_fee/{item['id']}/edit",
+                "activate_url": f"/catalog/types/flat_fee/{item['id']}/activate",
+                "delete_url": f"/catalog/types/flat_fee/{item['id']}/delete",
                 "is_seeded": False,
             }
         )
@@ -8014,11 +8164,7 @@ def catalog_index(
         "catalog.html",
         {
             "catalog_items": catalog_items,
-            "catalog_kind_options": {
-                "license": "Lizenzart",
-                "service": "Dienstleistungsart",
-                "flat_fee": "Pauschalart",
-            },
+            "catalog_kind_options": CATALOG_KIND_OPTIONS,
             "form": {"catalog_kind": tab if tab in {"license", "service", "flat_fee"} else "license"},
         },
     )
@@ -8107,6 +8253,187 @@ def create_catalog_type(
     return redirect_to("/catalog")
 
 
+@app.get("/catalog/types/{source_kind}/{type_id}/edit")
+def edit_catalog_type_form(
+    request: Request,
+    source_kind: str,
+    type_id: int,
+    _: dict[str, Any] = Depends(require_permission("catalog.manage")),
+):
+    try:
+        catalog_kind = validate_catalog_kind(source_kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    with database.connect() as connection:
+        item = fetch_catalog_type(connection, catalog_kind, type_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail=CATALOG_TYPE_META[catalog_kind]["not_found"])
+        usage_count = catalog_type_usage_count(connection, catalog_kind, type_id)
+    form = dict(item)
+    form["catalog_kind"] = catalog_kind
+    return render_catalog_type_form(request, catalog_kind, type_id, form, usage_count)
+
+
+@app.post("/catalog/types/{source_kind}/{type_id}/update")
+def update_catalog_type(
+    request: Request,
+    source_kind: str,
+    type_id: int,
+    catalog_kind: str = Form(...),
+    name: str = Form(...),
+    datev_account: str = Form(...),
+    description: str = Form(""),
+    active: str = Form("1"),
+    _: dict[str, Any] = Depends(require_permission("catalog.manage")),
+):
+    try:
+        current_kind = validate_catalog_kind(source_kind)
+        target_kind = validate_catalog_kind(catalog_kind)
+        cleaned_name = required_text(name, "Name")
+        cleaned_datev_account = required_text(datev_account, "DATEV-Konto")
+        if active not in {"0", "1"}:
+            raise ValueError("Bitte einen gueltigen Status auswaehlen.")
+    except ValueError as exc:
+        form_values = {
+            "id": type_id,
+            "catalog_kind": catalog_kind,
+            "name": name,
+            "datev_account": datev_account,
+            "description": description,
+            "active": 1 if active == "1" else 0,
+        }
+        return render_catalog_type_form(
+            request,
+            source_kind,
+            type_id,
+            form_values,
+            0,
+            str(exc),
+            status_code=400,
+        )
+
+    timestamp = now_iso()
+    active_value = 1 if active == "1" else 0
+    cleaned_description = description.strip()
+    with database.connect() as connection:
+        existing = fetch_catalog_type(connection, current_kind, type_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail=CATALOG_TYPE_META[current_kind]["not_found"])
+        usage_count = catalog_type_usage_count(connection, current_kind, type_id)
+        form_values = {
+            "id": type_id,
+            "catalog_kind": target_kind,
+            "name": cleaned_name,
+            "datev_account": cleaned_datev_account,
+            "description": cleaned_description,
+            "active": active_value,
+        }
+        if target_kind != current_kind and usage_count:
+            return render_catalog_type_form(
+                request,
+                current_kind,
+                type_id,
+                form_values,
+                usage_count,
+                "Die Art kann nur geaendert werden, solange der Katalogeintrag nicht genutzt wird.",
+                status_code=400,
+            )
+        duplicate_id = type_id if target_kind == current_kind else None
+        if catalog_type_duplicate(connection, target_kind, cleaned_name, duplicate_id):
+            return render_catalog_type_form(
+                request,
+                current_kind,
+                type_id,
+                form_values,
+                usage_count,
+                f"Eine {CATALOG_TYPE_META[target_kind]['label']} mit diesem Namen existiert bereits.",
+                status_code=400,
+            )
+        if target_kind == current_kind:
+            update_catalog_type_record(
+                connection,
+                current_kind,
+                type_id,
+                cleaned_name,
+                cleaned_datev_account,
+                cleaned_description,
+                active_value,
+                timestamp,
+            )
+        else:
+            insert_catalog_type(
+                connection,
+                target_kind,
+                cleaned_name,
+                cleaned_datev_account,
+                cleaned_description,
+                active_value,
+                timestamp,
+            )
+            connection.execute(
+                f"DELETE FROM {CATALOG_TYPE_META[current_kind]['table']} WHERE id = ?",
+                (type_id,),
+            )
+    return redirect_to("/catalog")
+
+
+@app.post("/catalog/types/{catalog_kind}/{type_id}/activate")
+def activate_catalog_type(
+    catalog_kind: str,
+    type_id: int,
+    _: dict[str, Any] = Depends(require_superadmin),
+):
+    try:
+        kind = validate_catalog_kind(catalog_kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    timestamp = now_iso()
+    table = CATALOG_TYPE_META[kind]["table"]
+    with database.connect() as connection:
+        result = connection.execute(
+            f"""
+            UPDATE {table}
+            SET active = 1, updated_at = ?
+            WHERE id = ?
+            """,
+            (timestamp, type_id),
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail=CATALOG_TYPE_META[kind]["not_found"])
+    return redirect_to("/catalog")
+
+
+@app.post("/catalog/types/{catalog_kind}/{type_id}/delete")
+def delete_catalog_type(
+    catalog_kind: str,
+    type_id: int,
+    _: dict[str, Any] = Depends(require_superadmin),
+):
+    try:
+        kind = validate_catalog_kind(catalog_kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    timestamp = now_iso()
+    table = CATALOG_TYPE_META[kind]["table"]
+    with database.connect() as connection:
+        item = fetch_catalog_type(connection, kind, type_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail=CATALOG_TYPE_META[kind]["not_found"])
+        usage_count = catalog_type_usage_count(connection, kind, type_id)
+        if usage_count == 0:
+            connection.execute(f"DELETE FROM {table} WHERE id = ?", (type_id,))
+        else:
+            connection.execute(
+                f"""
+                UPDATE {table}
+                SET active = 0, updated_at = ?
+                WHERE id = ?
+                """,
+                (timestamp, type_id),
+            )
+    return redirect_to("/catalog")
+
+
 @app.post("/catalog/license-types")
 def create_license_type(
     name: str = Form(...),
@@ -8137,24 +8464,7 @@ def edit_license_type_form(
     type_id: int,
     _: dict[str, Any] = Depends(require_permission("catalog.manage")),
 ):
-    with database.connect() as connection:
-        license_type = connection.execute(
-            "SELECT * FROM license_types WHERE id = ?",
-            (type_id,),
-        ).fetchone()
-    if license_type is None:
-        raise HTTPException(status_code=404, detail="Lizenzart nicht gefunden.")
-    return render(
-        request,
-        "catalog_type_form.html",
-        {
-            "catalog_kind": "license",
-            "form_title": "Lizenzart bearbeiten",
-            "form_action": f"/catalog/license-types/{type_id}/update",
-            "cancel_url": "/catalog",
-            "form": dict(license_type),
-        },
-    )
+    return redirect_to(f"/catalog/types/license/{type_id}/edit")
 
 
 @app.post("/catalog/license-types/{type_id}/update")
@@ -8279,7 +8589,7 @@ def delete_license_type(
             "SELECT COUNT(*) FROM licenses WHERE license_type_id = ?",
             (type_id,),
         ).fetchone()[0]
-        if usage_count == 0 and (not license_type["active"] or license_type["name"] not in DEFAULT_LICENSE_TYPE_NAMES):
+        if usage_count == 0:
             connection.execute("DELETE FROM license_types WHERE id = ?", (type_id,))
         else:
             connection.execute(
@@ -8336,26 +8646,7 @@ def edit_service_type_form(
     type_id: int,
     _: dict[str, Any] = Depends(require_permission("catalog.manage")),
 ):
-    with database.connect() as connection:
-        service_type = connection.execute(
-            "SELECT * FROM service_types WHERE id = ?",
-            (type_id,),
-        ).fetchone()
-    if service_type is None:
-        raise HTTPException(status_code=404, detail="Dienstleistungsart nicht gefunden.")
-    form_values = dict(service_type)
-    form_values["default_hourly_rate"] = rate_input(form_values.get("default_hourly_rate_cents"))
-    return render(
-        request,
-        "catalog_type_form.html",
-        {
-            "catalog_kind": "service",
-            "form_title": "Dienstleistungsart bearbeiten",
-            "form_action": f"/catalog/service-types/{type_id}/update",
-            "cancel_url": "/catalog",
-            "form": form_values,
-        },
-    )
+    return redirect_to(f"/catalog/types/service/{type_id}/edit")
 
 
 @app.post("/catalog/service-types/{type_id}/update")
@@ -8485,7 +8776,7 @@ def delete_service_type(
             "SELECT COUNT(*) FROM services WHERE service_type_id = ?",
             (type_id,),
         ).fetchone()[0]
-        if usage_count == 0 and (not service_type["active"] or service_type["name"] not in DEFAULT_SERVICE_TYPE_NAMES):
+        if usage_count == 0:
             connection.execute("DELETE FROM service_types WHERE id = ?", (type_id,))
         else:
             connection.execute(
@@ -8529,24 +8820,7 @@ def edit_flat_fee_type_form(
     type_id: int,
     _: dict[str, Any] = Depends(require_permission("catalog.manage")),
 ):
-    with database.connect() as connection:
-        flat_fee_type = connection.execute(
-            "SELECT * FROM flat_fee_types WHERE id = ?",
-            (type_id,),
-        ).fetchone()
-    if flat_fee_type is None:
-        raise HTTPException(status_code=404, detail="Pauschalart nicht gefunden.")
-    return render(
-        request,
-        "catalog_type_form.html",
-        {
-            "catalog_kind": "flat_fee",
-            "form_title": "Pauschalart bearbeiten",
-            "form_action": f"/catalog/flat-fee-types/{type_id}/update",
-            "cancel_url": "/catalog",
-            "form": dict(flat_fee_type),
-        },
-    )
+    return redirect_to(f"/catalog/types/flat_fee/{type_id}/edit")
 
 
 @app.post("/catalog/flat-fee-types/{type_id}/update")

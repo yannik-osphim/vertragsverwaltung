@@ -84,7 +84,7 @@
                 <a class="button secondary" href="{{ item.edit_url }}">Bearbeiten</a>
                 {% if item.active %}
                 <form class="inline-row-actions" method="post" action="{{ item.delete_url }}">
-                  <button class="button danger" type="submit">{% if item.usage_count == 0 and (not item.active or not item.is_seeded) %}Loeschen{% else %}Deaktivieren{% endif %}</button>
+                  <button class="button danger" type="submit">{% if item.usage_count == 0 %}Loeschen{% else %}Deaktivieren{% endif %}</button>
                 </form>
                 {% else %}
                 <form class="inline-row-actions" method="post" action="{{ item.activate_url }}">

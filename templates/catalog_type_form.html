@@ -18,6 +18,18 @@
     <h2 class="form-section-title">Stammdaten</h2>
     <div class="form-section-grid">
       <label>
+        <span>Gehoert zu <span class="required-marker" title="Pflichtfeld">*</span></span>
+        <select name="catalog_kind" required {% if can_change_kind is defined and not can_change_kind %}disabled{% endif %}>
+          {% for key, label in catalog_kind_options.items() %}
+          <option value="{{ key }}" {% if (form.catalog_kind or catalog_kind) == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        {% if can_change_kind is defined and not can_change_kind %}
+        <input type="hidden" name="catalog_kind" value="{{ form.catalog_kind or catalog_kind }}">
+        <small>Wird bereits {{ usage_count }} mal genutzt; die Art kann deshalb nicht geaendert werden.</small>
+        {% endif %}
+      </label>
+      <label>
         <span>Name <span class="required-marker" title="Pflichtfeld">*</span></span>
         <input name="name" value="{{ form.name or '' }}" required>
       </label>
