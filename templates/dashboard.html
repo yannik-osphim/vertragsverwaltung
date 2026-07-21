@@ -19,26 +19,26 @@
 {% if has_permission('companies.view') or has_permission('contracts.view') or has_permission('billing.create') or has_permission('time.approve') %}
 <section class="metric-grid">
   {% if has_permission('companies.view') %}
-  <article class="metric">
+  <a class="metric metric-link" href="/companies">
     <span>Unternehmen</span>
     <strong>{{ metrics.company_count }}</strong>
-  </article>
+  </a>
   {% endif %}
   {% if has_permission('contracts.view') %}
-  <article class="metric">
+  <a class="metric metric-link" href="/contracts">
     <span>Aktive Vertraege</span>
     <strong>{{ metrics.active_contract_count }}</strong>
-  </article>
-  <article class="metric success">
+  </a>
+  <a class="metric metric-link success" href="/licenses">
     <span>Aktive Lizenzen</span>
     <strong>{{ metrics.active_license_count }}</strong>
-  </article>
+  </a>
   {% endif %}
   {% if has_permission('billing.create') or has_permission('time.approve') %}
-  <article class="metric warning">
+  <a class="metric metric-link warning" href="/time-entries">
     <span>Freigegeben, unberechnet</span>
     <strong>{{ metrics.approved_unbilled_hours | work_quantity }}</strong>
-  </article>
+  </a>
   {% endif %}
   {% if has_permission('billing.create') %}
   <a class="metric metric-link warning" href="/billing">

@@ -1047,7 +1047,7 @@ th {
 }
 
 .table-wrap.action-menu-open {
-  overflow: visible;
+  overflow-x: auto;
 }
 
 .table-tools {
@@ -1211,9 +1211,9 @@ th {
 }
 
 .row-action-list {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.35rem);
+  position: fixed;
+  left: var(--row-action-left, auto);
+  top: var(--row-action-top, auto);
   z-index: 40;
   display: grid;
   gap: 0.35rem;
@@ -1230,6 +1230,13 @@ th {
   width: 100%;
   justify-content: flex-start;
   text-align: left;
+}
+
+.compact-table-input {
+  min-width: 6rem;
+  max-width: 8rem;
+  padding: 0.48rem 0.55rem;
+  font-size: 0.9rem;
 }
 
 .sortable-heading {
@@ -1251,6 +1258,19 @@ th {
 .action-list {
   display: grid;
   gap: 0.7rem;
+}
+
+.invoice-position-form {
+  max-width: 1180px;
+}
+
+.invoice-position-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.invoice-position-editor .section-title {
+  align-items: flex-start;
 }
 
 .flash {
@@ -1357,6 +1377,11 @@ th {
 .status.pending {
   background: var(--primary-soft);
   color: var(--primary-dark);
+}
+
+.status.neutral {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .status.paused {

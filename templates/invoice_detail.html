@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ invoice.invoice_number }} - Vertragsverwaltung{% endblock %}
 {% block content %}
+{% set reopened_finalized_invoice = invoice.status == 'draft' and (invoice.datev_invoice_number or invoice.datev_invoice_date) %}
+{% set invoice_positions_editable = (invoice.status == 'draft' and not reopened_finalized_invoice) or is_superadmin %}
 <section class="page-heading">
   <div>
     <p class="eyebrow">Rechnung</p>
@@ -8,7 +10,12 @@
   </div>
   <div class="page-actions">
     <a class="button subtle" href="/billing">Zurueck</a>
-    {% if invoice.status == 'draft' %}
+    {% if invoice.status == 'finalized' and is_superadmin %}
+    <form method="post" action="/invoices/{{ invoice.id }}/reopen" data-confirm-message="Soll diese finalisierte Rechnung wirklich wieder als Entwurf geoeffnet werden?">
+      <button class="button secondary" type="submit">Zurueck in Entwurf</button>
+    </form>
+    {% endif %}
+    {% if invoice.status == 'draft' and (not reopened_finalized_invoice or is_superadmin) %}
     <form method="post" action="/invoices/{{ invoice.id }}/delete">
       <button class="button danger" type="submit">Entwurf loeschen</button>
     </form>
@@ -36,6 +43,16 @@
       <div><dt>DATEV-Rechnungsnummer</dt><dd>{{ invoice.datev_invoice_number or "-" }}</dd></div>
       <div><dt>DATEV-Rechnungsdatum</dt><dd>{{ invoice.datev_invoice_date | date_de }}</dd></div>
       <div><dt>Umsatzsteuer</dt><dd>{{ invoice.vat_treatment | vat_treatment_label }}{% if invoice.vat_treatment == 'standard' %} ({{ invoice.vat_rate_percent or '19' }} %){% endif %}</dd></div>
+      <div><dt>Zwischensumme</dt><dd>{{ (invoice.subtotal_cents or invoice.total_cents) | money(invoice.currency) }}</dd></div>
+      <div>
+        <dt>Rabatt</dt>
+        <dd>
+          {{ invoice.discount_cents | money(invoice.currency) }}
+          {% if invoice.discount_type and invoice.discount_type != 'none' %}
+          <br><span class="muted">{{ invoice.discount_type | discount_type_label }}{% if invoice.discount_value %}: {{ invoice.discount_value }}{% endif %}</span>
+          {% endif %}
+        </dd>
+      </div>
       <div><dt>Netto</dt><dd>{{ invoice.total_cents | money(invoice.currency) }}</dd></div>
       <div><dt>USt</dt><dd>{{ invoice.vat_cents | money(invoice.currency) }}</dd></div>
       <div><dt>Brutto</dt><dd>{{ (invoice.gross_total_cents or invoice.total_cents) | money(invoice.currency) }}</dd></div>
@@ -49,7 +66,10 @@
     {% if finalize_error %}
     <p class="alert">{{ finalize_error }}</p>
     {% endif %}
-    {% if invoice.status == 'draft' %}
+    {% if edit_error %}
+    <p class="alert">{{ edit_error }}</p>
+    {% endif %}
+    {% if invoice.status == 'draft' and (not reopened_finalized_invoice or is_superadmin) %}
     <form class="stack datev-finalize-form" method="post" action="/invoices/{{ invoice.id }}/finalize">
       <label>
         <span>DATEV-Rechnungsnummer</span>
@@ -60,6 +80,30 @@
         <input name="datev_invoice_date" type="date" value="{{ form.datev_invoice_date or invoice.datev_invoice_date or today }}" required>
       </label>
       <button class="button primary" type="submit">Rechnung finalisieren</button>
+    </form>
+    {% elif is_superadmin %}
+    <form class="stack datev-finalize-form" method="post" action="/invoices/{{ invoice.id }}/update">
+      <label>
+        <span>Interne Rechnungsnummer</span>
+        <input name="invoice_number" value="{{ form.invoice_number or invoice.invoice_number or '' }}" required>
+      </label>
+      <label>
+        <span>Zeitraum von</span>
+        <input name="period_start" type="date" value="{{ form.period_start or invoice.period_start or '' }}" required>
+      </label>
+      <label>
+        <span>Zeitraum bis</span>
+        <input name="period_end" type="date" value="{{ form.period_end or invoice.period_end or '' }}" required>
+      </label>
+      <label>
+        <span>DATEV-Rechnungsnummer</span>
+        <input name="datev_invoice_number" value="{{ form.datev_invoice_number or invoice.datev_invoice_number or '' }}" required>
+      </label>
+      <label>
+        <span>DATEV-Rechnungsdatum</span>
+        <input name="datev_invoice_date" type="date" value="{{ form.datev_invoice_date or invoice.datev_invoice_date or today }}" required>
+      </label>
+      <button class="button primary" type="submit">Rechnungsdaten speichern</button>
     </form>
     {% else %}
     <dl class="detail-grid compact-detail-grid">
@@ -88,7 +132,17 @@
 <section class="analytics-band">
   <div class="section-title">
     <h2>Positionen</h2>
+    {% if invoice_positions_editable %}
+    <a class="button secondary" href="/invoices/{{ invoice.id }}/positions/edit">Positionen bearbeiten</a>
+    {% endif %}
   </div>
+  {% if discount_error %}
+  <p class="alert">{{ discount_error }}</p>
+  {% endif %}
+  {% set discounts_editable = invoice_positions_editable %}
+  {% if discounts_editable %}
+  <form method="post" action="/invoices/{{ invoice.id }}/line-discounts" data-invoice-discount-form data-currency="{{ invoice.currency }}">
+  {% endif %}
   <div class="table-wrap">
     <table>
       <thead>
@@ -97,23 +151,138 @@
           <th>DATEV</th>
           <th>Beschreibung</th>
           <th>Menge</th>
+          <th>Zwischensumme</th>
+          <th>Rabatt</th>
+          {% if discounts_editable %}<th>Einheit</th>{% endif %}
           <th>Betrag netto</th>
         </tr>
       </thead>
       <tbody>
         {% for line in lines %}
-        <tr>
+        <tr data-invoice-line data-subtotal-cents="{{ line.subtotal_cents or line.amount_cents }}">
           <td>{{ line.item_type | item_type_label }}</td>
           <td>{{ line.datev_account or "-" }}</td>
           <td><div class="rich-text-content compact">{{ line.description | rich_text }}</div></td>
           <td data-aggregate-value="{{ line.aggregate_quantity_value }}" data-aggregate-suffix="{{ line.aggregate_quantity_suffix }}">{{ line.quantity_text }}</td>
-          <td>{{ line.amount_cents | money(invoice.currency) }}</td>
+          <td data-line-subtotal>{{ (line.subtotal_cents or line.amount_cents) | money(invoice.currency) }}</td>
+          <td>
+            {% if discounts_editable %}
+            <input type="hidden" name="line_item_ids" value="{{ line.id }}">
+            <input class="compact-table-input" name="line_discount_values" inputmode="decimal" value="{{ line.discount_value or '' }}" placeholder="0" data-line-discount-value>
+            <div class="muted" data-line-discount-amount>{{ line.discount_cents | money(invoice.currency) }}</div>
+            {% else %}
+            {{ line.discount_cents | money(invoice.currency) }}
+            {% if line.discount_type and line.discount_type != 'none' and line.discount_value %}
+            <br><span class="muted">{{ line.discount_value }} {{ line.discount_type | line_discount_unit_label }}</span>
+            {% endif %}
+            {% endif %}
+          </td>
+          {% if discounts_editable %}
+          <td>
+            <select class="compact-table-input" name="line_discount_units" data-line-discount-unit>
+              {% for key, label in line_discount_units.items() %}
+              <option value="{{ key }}" {% if line.discount_type == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          {% endif %}
+          <td data-line-net>{{ line.amount_cents | money(invoice.currency) }}</td>
         </tr>
         {% endfor %}
       </tbody>
+      <tfoot>
+        <tr class="aggregate-row">
+          <td colspan="4" class="aggregate-label">Summe</td>
+          <td class="aggregate-value" data-invoice-subtotal>{{ (invoice.subtotal_cents or invoice.total_cents) | money(invoice.currency) }}</td>
+          <td class="aggregate-value" data-invoice-discount>{{ invoice.discount_cents | money(invoice.currency) }}</td>
+          {% if discounts_editable %}<td></td>{% endif %}
+          <td class="aggregate-value" data-invoice-net>{{ invoice.total_cents | money(invoice.currency) }}</td>
+        </tr>
+      </tfoot>
     </table>
   </div>
+  {% if discounts_editable %}
+  <div class="form-actions billing-actions">
+    <button class="button primary" type="submit">Rabatte speichern</button>
+  </div>
+  </form>
+  {% endif %}
 </section>
+
+<script>
+  (function () {
+    var form = document.querySelector("[data-invoice-discount-form]");
+    if (!form) {
+      return;
+    }
+    var currency = form.dataset.currency || "EUR";
+    var formatter = new Intl.NumberFormat("de-DE", { style: "currency", currency: currency });
+
+    function parseDecimal(value) {
+      var normalized = String(value || "").trim().replace(/\./g, "").replace(",", ".");
+      if (!normalized) {
+        return 0;
+      }
+      var parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function money(cents) {
+      return formatter.format((Number(cents) || 0) / 100);
+    }
+
+    function calculateDiscount(subtotalCents, unit, value) {
+      var parsed = parseDecimal(value);
+      if (parsed <= 0) {
+        return 0;
+      }
+      if (unit === "percent") {
+        return Math.min(subtotalCents, Math.round(subtotalCents * Math.min(parsed, 100) / 100));
+      }
+      return Math.min(subtotalCents, Math.round(parsed * 100));
+    }
+
+    function recalculate() {
+      var subtotal = 0;
+      var discount = 0;
+      var net = 0;
+      form.querySelectorAll("[data-invoice-line]").forEach(function (row) {
+        var rowSubtotal = Number(row.dataset.subtotalCents || 0);
+        var value = row.querySelector("[data-line-discount-value]");
+        var unit = row.querySelector("[data-line-discount-unit]");
+        var rowDiscount = calculateDiscount(rowSubtotal, unit ? unit.value : "absolute", value ? value.value : "");
+        var rowNet = Math.max(0, rowSubtotal - rowDiscount);
+        subtotal += rowSubtotal;
+        discount += rowDiscount;
+        net += rowNet;
+        var amountTarget = row.querySelector("[data-line-discount-amount]");
+        var netTarget = row.querySelector("[data-line-net]");
+        if (amountTarget) {
+          amountTarget.textContent = money(rowDiscount);
+        }
+        if (netTarget) {
+          netTarget.textContent = money(rowNet);
+        }
+      });
+      var subtotalTarget = form.querySelector("[data-invoice-subtotal]");
+      var discountTarget = form.querySelector("[data-invoice-discount]");
+      var netTarget = form.querySelector("[data-invoice-net]");
+      if (subtotalTarget) {
+        subtotalTarget.textContent = money(subtotal);
+      }
+      if (discountTarget) {
+        discountTarget.textContent = money(discount);
+      }
+      if (netTarget) {
+        netTarget.textContent = money(net);
+      }
+    }
+
+    form.addEventListener("input", recalculate);
+    form.addEventListener("change", recalculate);
+    recalculate();
+  })();
+</script>
 
 {% if linked_entries %}
 <section class="analytics-band">

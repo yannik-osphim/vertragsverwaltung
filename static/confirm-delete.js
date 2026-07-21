@@ -14,10 +14,16 @@
 
   document.addEventListener("submit", function (event) {
     var form = event.target;
-    if (!(form instanceof HTMLFormElement) || !isDeleteAction(form)) {
+    if (!(form instanceof HTMLFormElement)) {
       return;
     }
-    var message = form.dataset.confirmMessage || "Soll dieser Eintrag wirklich geloescht werden?";
+    var message = form.dataset.confirmMessage || "";
+    if (!message && isDeleteAction(form)) {
+      message = "Soll dieser Eintrag wirklich geloescht werden?";
+    }
+    if (!message) {
+      return;
+    }
     if (!window.confirm(message)) {
       event.preventDefault();
     }

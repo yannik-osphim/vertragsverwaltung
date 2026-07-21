@@ -153,9 +153,21 @@ VAT_TREATMENTS = {
     "no_vat": "Ohne Umsatzsteuer",
 }
 
+DISCOUNT_TYPES = {
+    "none": "Kein Rabatt",
+    "percent": "Prozentual",
+    "absolute": "Absolut",
+}
+
+LINE_DISCOUNT_UNITS = {
+    "absolute": "EUR",
+    "percent": "%",
+}
+
 FLAT_FEE_KINDS = {
     "work_package": "Arbeitspaket / Festpreis",
     "success_bonus": "Erfolgsbonus",
+    "travel_cost": "Reisekosten",
 }
 
 FLAT_FEE_APPROVAL_STATUSES = {
@@ -551,6 +563,16 @@ def vat_treatment_label(value: str | None) -> str:
     return VAT_TREATMENTS.get(value or "standard", value or "-")
 
 
+def discount_type_label(value: str | None) -> str:
+    if value == "line_items":
+        return "Positionsrabatte"
+    return DISCOUNT_TYPES.get(value or "none", value or "-")
+
+
+def line_discount_unit_label(value: str | None) -> str:
+    return LINE_DISCOUNT_UNITS.get(value or "absolute", value or "-")
+
+
 def flat_fee_kind_label(value: str | None) -> str:
     return FLAT_FEE_KINDS.get(value or "work_package", value or "-")
 
@@ -564,6 +586,56 @@ def validate_vat_treatment(value: str | None) -> str:
     if selected not in VAT_TREATMENTS:
         raise ValueError("Bitte eine gueltige Umsatzsteuer-Option auswaehlen.")
     return selected
+
+
+def validate_discount_type(value: str | None) -> str:
+    selected = (value or "none").strip()
+    if selected not in DISCOUNT_TYPES:
+        raise ValueError("Bitte eine gueltige Rabattart auswaehlen.")
+    return selected
+
+
+def validate_line_discount_unit(value: str | None) -> str:
+    selected = (value or "absolute").strip()
+    if selected not in LINE_DISCOUNT_UNITS:
+        raise ValueError("Bitte eine gueltige Rabatteinheit auswaehlen.")
+    return selected
+
+
+def calculate_discount_cents(subtotal_cents: int, discount_type: str | None, discount_value: str | None) -> int:
+    subtotal = max(0, int(subtotal_cents or 0))
+    selected_type = validate_discount_type(discount_type)
+    value = (discount_value or "").strip()
+    if selected_type == "none":
+        return 0
+    if selected_type == "percent":
+        percent_value = parse_optional_decimal(value)
+        if percent_value is None:
+            percent_value = Decimal("0")
+        if percent_value < 0 or percent_value > 100:
+            raise ValueError("Prozentuale Rabatte muessen zwischen 0 und 100 liegen.")
+        return min(subtotal, cents_from_decimal(Decimal(subtotal) * percent_value / Decimal("100")))
+    amount_cents = parse_amount_to_cents(value or "0")
+    if amount_cents < 0:
+        raise ValueError("Absolute Rabatte duerfen nicht negativ sein.")
+    return min(subtotal, amount_cents)
+
+
+def normalize_line_discount(subtotal_cents: int, unit: str | None, value: str | None) -> dict[str, Any]:
+    cleaned_value = (value or "").strip()
+    if not cleaned_value:
+        return {
+            "discount_type": "none",
+            "discount_value": "",
+            "discount_cents": 0,
+        }
+    selected_unit = validate_line_discount_unit(unit)
+    discount_cents = calculate_discount_cents(subtotal_cents, selected_unit, cleaned_value)
+    return {
+        "discount_type": selected_unit,
+        "discount_value": cleaned_value if discount_cents else "",
+        "discount_cents": discount_cents,
+    }
 
 
 def validate_billing_frequency(value: str, fallback: str | None = None) -> str:
@@ -584,9 +656,6 @@ def normalize_flat_fee_fields(
     item_kind = validate_flat_fee_kind(fee_kind)
     item_billing_frequency = validate_billing_frequency(billing_frequency or "", "once")
     cleaned_success_condition = (success_condition or "").strip()
-    requested_approval_status = (approval_status or "").strip()
-    if item_kind != "success_bonus" and requested_approval_status in {"pending", "approved", "rejected"}:
-        item_kind = "success_bonus"
     try:
         parsed_expected_success_date = parse_iso_date(expected_success_date)
         parsed_success_date = parse_iso_date(success_date)
@@ -1236,26 +1305,64 @@ def ensure_sample_data() -> None:
             """
             INSERT INTO invoices (
                 invoice_number, company_id, contract_id, period_start, period_end,
-                status, currency, total_cents, include_licenses, include_services,
+                status, currency, subtotal_cents, discount_type, discount_value,
+                discount_cents, total_cents, include_licenses, include_services,
                 include_variable_costs, created_by, created_at, updated_at
             )
             VALUES ('ABR-2026-0001', ?, ?, '2026-01-01', '2026-03-31',
-                    'finalized', 'EUR', ?, 1, 1, 0, ?, ?, ?)
+                    'finalized', 'EUR', ?, 'none', '', 0, ?, 1, 1, 0, ?, ?, ?)
             """,
-            (acme_id, acme_contract_id, 542500, admin_id, timestamp, timestamp),
+            (acme_id, acme_contract_id, 542500, 542500, admin_id, timestamp, timestamp),
         )
         invoice_id = invoice_cursor.lastrowid
         line_items = [
-            (invoice_id, "license", core_license_id, "4400", "Cloud Suite Core - Q1 2026", "Quartal", 250000),
-            (invoice_id, "license", analytics_license_id, "4401", "Analytics Modul - Q1 2026", "Quartal", 120000),
-            (invoice_id, "service", consulting_id, "8400", "Dienstleistungsstunden Q1 2026", "11,50 h", 172500),
+            (
+                invoice_id,
+                "license",
+                core_license_id,
+                "4400",
+                "Cloud Suite Core - Q1 2026",
+                "Quartal",
+                250000,
+                "none",
+                "",
+                0,
+                250000,
+            ),
+            (
+                invoice_id,
+                "license",
+                analytics_license_id,
+                "4401",
+                "Analytics Modul - Q1 2026",
+                "Quartal",
+                120000,
+                "none",
+                "",
+                0,
+                120000,
+            ),
+            (
+                invoice_id,
+                "service",
+                consulting_id,
+                "8400",
+                "Dienstleistungsstunden Q1 2026",
+                "11,50 h",
+                172500,
+                "none",
+                "",
+                0,
+                172500,
+            ),
         ]
         connection.executemany(
             """
             INSERT INTO invoice_line_items (
-                invoice_id, item_type, source_id, datev_account, description, quantity_text, amount_cents
+                invoice_id, item_type, source_id, datev_account, description, quantity_text,
+                subtotal_cents, discount_type, discount_value, discount_cents, amount_cents
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             line_items,
         )
@@ -1374,6 +1481,8 @@ templates.env.filters["work_amount_input"] = work_amount_input
 templates.env.filters["frequency_label"] = frequency_label
 templates.env.filters["billing_strategy_label"] = billing_strategy_label
 templates.env.filters["vat_treatment_label"] = vat_treatment_label
+templates.env.filters["discount_type_label"] = discount_type_label
+templates.env.filters["line_discount_unit_label"] = line_discount_unit_label
 templates.env.filters["flat_fee_kind_label"] = flat_fee_kind_label
 templates.env.filters["flat_fee_approval_label"] = flat_fee_approval_label
 templates.env.filters["status_label"] = status_label
@@ -1460,7 +1569,7 @@ def breadcrumbs_for_path(path: str) -> list[dict[str, str]]:
         return []
 
     if path.startswith("/companies"):
-        items = [{"label": "Entitaeten", "href": "/companies"}, {"label": "Unternehmen", "href": "/companies"}]
+        items = [{"label": "Stammdaten", "href": "/companies"}, {"label": "Unternehmen", "href": "/companies"}]
         if path == "/companies/new":
             items.append({"label": "Neu", "href": path})
         elif path.endswith("/edit"):
@@ -1472,7 +1581,7 @@ def breadcrumbs_for_path(path: str) -> list[dict[str, str]]:
         return items
 
     if path.startswith("/contracts"):
-        items = [{"label": "Entitaeten", "href": "/companies"}, {"label": "Vertraege", "href": "/contracts"}]
+        items = [{"label": "Stammdaten", "href": "/companies"}, {"label": "Vertraege", "href": "/contracts"}]
         if path == "/contracts/new":
             items.append({"label": "Neu", "href": path})
         elif path.endswith("/document"):
@@ -1500,13 +1609,22 @@ def breadcrumbs_for_path(path: str) -> list[dict[str, str]]:
         return items
 
     if path.startswith("/licenses"):
-        return [{"label": "Entitaeten", "href": "/companies"}, {"label": "Lizenzen", "href": "/licenses"}]
+        items = [{"label": "Stammdaten", "href": "/companies"}, {"label": "Lizenzen", "href": "/licenses"}]
+        if path == "/licenses/new":
+            items.append({"label": "Neu", "href": path})
+        return items
 
     if path.startswith("/services"):
-        return [{"label": "Entitaeten", "href": "/companies"}, {"label": "Dienstleistungen", "href": "/services"}]
+        items = [{"label": "Stammdaten", "href": "/companies"}, {"label": "Dienstleistungen", "href": "/services"}]
+        if path == "/services/new":
+            items.append({"label": "Neu", "href": path})
+        return items
 
     if path.startswith("/flat-fees"):
-        return [{"label": "Entitaeten", "href": "/companies"}, {"label": "Pauschalen", "href": "/flat-fees"}]
+        items = [{"label": "Stammdaten", "href": "/companies"}, {"label": "Pauschalen", "href": "/flat-fees"}]
+        if path == "/flat-fees/new":
+            items.append({"label": "Neu", "href": path})
+        return items
 
     if path.startswith("/time-entries"):
         items = [{"label": "Stunden", "href": "/time-entries/new"}]
@@ -1522,7 +1640,11 @@ def breadcrumbs_for_path(path: str) -> list[dict[str, str]]:
 
     if path.startswith("/billing") or path.startswith("/invoices"):
         items = [{"label": "Abrechnung", "href": "/billing"}]
-        if path.startswith("/invoices/"):
+        if path.startswith("/invoices/") and path.endswith("/positions/edit"):
+            invoice_path = path.rsplit("/", 2)[0]
+            items.append({"label": "Rechnung", "href": invoice_path})
+            items.append({"label": "Positionen bearbeiten", "href": path})
+        elif path.startswith("/invoices/"):
             items.append({"label": "Rechnung", "href": path})
         return items
 
@@ -1564,6 +1686,8 @@ def back_url_for_path(path: str, user: dict[str, Any] | None) -> str:
         return "/time-entries" if has_permission(user, "time.approve") else "/"
     if path.startswith("/time-entries/") and path.endswith("/edit"):
         return "/time-entries"
+    if path.startswith("/invoices/") and path.endswith("/positions/edit"):
+        return path.rsplit("/", 2)[0]
     if path.endswith("/document"):
         return path.rsplit("/", 1)[0]
     if path.startswith("/companies/") and path.endswith("/edit"):
@@ -1581,17 +1705,20 @@ def back_url_for_path(path: str, user: dict[str, Any] | None) -> str:
     if path.startswith("/contracts/") and path != "/contracts/new":
         return "/contracts"
     if path.startswith("/catalog/license-types/"):
-        return "/catalog?tab=licenses"
+        return "/catalog"
     if path.startswith("/catalog/service-types/"):
-        return "/catalog?tab=services"
+        return "/catalog"
     if path.startswith("/catalog/flat-fee-types/"):
-        return "/catalog?tab=flat_fees"
+        return "/catalog"
     parent_paths = {
         "/companies/new": "/companies",
         "/contracts/new": "/contracts",
         "/licenses": "/contracts",
+        "/licenses/new": "/licenses",
         "/services": "/contracts",
+        "/services/new": "/services",
         "/flat-fees": "/contracts",
+        "/flat-fees/new": "/flat-fees",
         "/time-entries": "/",
         "/billing": "/",
         "/analytics": "/",
@@ -1646,6 +1773,8 @@ def render(
         "billing_frequencies": BILLING_FREQUENCIES,
         "billing_strategies": BILLING_STRATEGIES,
         "vat_treatments": VAT_TREATMENTS,
+        "discount_types": DISCOUNT_TYPES,
+        "line_discount_units": LINE_DISCOUNT_UNITS,
         "flat_fee_kinds": FLAT_FEE_KINDS,
         "flat_fee_approval_statuses": FLAT_FEE_APPROVAL_STATUSES,
         "status_labels": STATUS_LABELS,
@@ -2779,6 +2908,8 @@ def flat_fee_billing_lines(contract: dict[str, Any], period_start: date, period_
 
     lines: list[dict[str, Any]] = []
     for row in flat_fees:
+        if (row["fee_kind"] or "work_package") == "travel_cost":
+            continue
         is_success_bonus = (row["fee_kind"] or "work_package") == "success_bonus"
         if is_success_bonus and row["approval_status"] != "approved":
             continue
@@ -2877,7 +3008,12 @@ def flat_fee_billing_lines(contract: dict[str, Any], period_start: date, period_
     return lines
 
 
-def service_billing_lines(contract: dict[str, Any], period_start: date, period_end: date) -> list[dict[str, Any]]:
+def service_billing_lines(
+    contract: dict[str, Any],
+    period_start: date,
+    period_end: date,
+    include_travel_costs: bool = True,
+) -> list[dict[str, Any]]:
     contract_id = contract["id"]
     contract_start = parse_iso_date(contract["start_date"]) or period_start
     effective_start = min(period_start, contract_start)
@@ -2905,6 +3041,34 @@ def service_billing_lines(contract: dict[str, Any], period_start: date, period_e
             """,
             (contract_id, effective_start.isoformat(), period_end.isoformat()),
         ).fetchall()
+        if include_travel_costs:
+            travel_fees = connection.execute(
+                """
+                SELECT flat_fees.*, flat_fee_types.datev_account
+                FROM flat_fees
+                JOIN flat_fee_types ON flat_fee_types.id = flat_fees.flat_fee_type_id
+                WHERE flat_fees.contract_id = ?
+                  AND flat_fees.status = 'active'
+                  AND flat_fees.fee_kind = 'travel_cost'
+                ORDER BY flat_fees.name
+                """,
+                (contract_id,),
+            ).fetchall()
+            reserved_flat_fee_keys = {
+                row["billing_key"]
+                for row in connection.execute(
+                    """
+                    SELECT billing_key
+                    FROM invoice_line_items
+                    WHERE item_type = 'flat_fee'
+                      AND billing_key IS NOT NULL
+                      AND billing_key != ''
+                    """
+                ).fetchall()
+            }
+        else:
+            travel_fees = []
+            reserved_flat_fee_keys = set()
 
     grouped: dict[int, dict[str, Any]] = {}
     for entry in entries:
@@ -2941,20 +3105,59 @@ def service_billing_lines(contract: dict[str, Any], period_start: date, period_e
     lines = []
     for item in grouped.values():
         amount_cents = cents_from_decimal(item["hours"] * Decimal(item["hourly_rate_cents"]))
-        lines.append(
-            {
-                "item_type": "service",
-                "source_id": item["source_id"],
-                "datev_account": item["datev_account"],
-                "selection_key": f"service:{item['source_id']}:{period_start.isoformat()}:{period_end.isoformat()}",
-                "description": item["description"],
-                "quantity_text": work_quantity_text(item["hours"]),
-                "amount_cents": amount_cents,
-                "period_start": item["period_start"],
-                "period_end": item["period_end"],
-                "time_entry_ids": item["time_entry_ids"],
-            }
-        )
+        selection_key = f"service:{item['source_id']}:{period_start.isoformat()}:{period_end.isoformat()}"
+        service_line = {
+            "item_type": "service",
+            "source_id": item["source_id"],
+            "datev_account": item["datev_account"],
+            "selection_key": selection_key,
+            "description": item["description"],
+            "quantity_text": work_quantity_text(item["hours"]),
+            "amount_cents": amount_cents,
+            "period_start": item["period_start"],
+            "period_end": item["period_end"],
+            "time_entry_ids": item["time_entry_ids"],
+        }
+        lines.append(service_line)
+
+        settings = app_settings()
+        travel_days = (item["hours"] / settings["workday_hours"]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if travel_days <= 0:
+            continue
+        for travel_fee in travel_fees:
+            fee_start = parse_iso_date(travel_fee["start_date"]) or contract_start
+            fee_end = parse_iso_date(travel_fee["end_date"]) or date(9999, 12, 31)
+            if fee_end < item["period_start"] or fee_start > item["period_end"]:
+                continue
+            billing_key = (
+                f"flat_fee:{travel_fee['id']}:travel:{item['source_id']}:"
+                f"{item['period_start'].isoformat()}:{item['period_end'].isoformat()}"
+            )
+            if billing_key in reserved_flat_fee_keys:
+                continue
+            travel_amount_cents = cents_from_decimal(Decimal(travel_fee["amount_cents"] or 0) * travel_days)
+            if travel_amount_cents <= 0:
+                continue
+            lines.append(
+                {
+                    "item_type": "flat_fee",
+                    "source_id": travel_fee["id"],
+                    "datev_account": travel_fee["datev_account"],
+                    "billing_key": billing_key,
+                    "selection_key": billing_key,
+                    "depends_on_selection_key": selection_key,
+                    "description": billing_position_description(
+                        f"Reisekosten: {travel_fee['name']}",
+                        travel_fee["notes"],
+                        f"Automatisch zu {item['description']}",
+                    ),
+                    "quantity_text": f"{hours_de(travel_days)} AT",
+                    "amount_cents": travel_amount_cents,
+                    "period_start": item["period_start"],
+                    "period_end": item["period_end"],
+                    "time_entry_ids": [],
+                }
+            )
     return lines
 
 
@@ -2973,7 +3176,7 @@ def billing_lines_for_contract(
     if include_licenses:
         lines.extend(license_billing_lines(contract, period_start, period_end))
     if include_services:
-        lines.extend(service_billing_lines(contract, period_start, period_end))
+        lines.extend(service_billing_lines(contract, period_start, period_end, include_flat_fees))
     if include_variable_costs:
         lines.extend(variable_cost_billing_lines(contract, period_start, period_end))
     if include_flat_fees:
@@ -3119,6 +3322,43 @@ def invoice_vat_amounts(contract: dict[str, Any], net_total_cents: int) -> dict[
     }
 
 
+def invoice_amounts(
+    contract: dict[str, Any],
+    subtotal_cents: int,
+    discount_type: str | None = "none",
+    discount_value: str | None = "",
+) -> dict[str, Any]:
+    selected_discount_type = validate_discount_type(discount_type)
+    discount_cents = calculate_discount_cents(subtotal_cents, selected_discount_type, discount_value)
+    total_cents = max(0, int(subtotal_cents or 0) - discount_cents)
+    return {
+        "subtotal_cents": int(subtotal_cents or 0),
+        "discount_type": selected_discount_type,
+        "discount_value": (discount_value or "").strip() if selected_discount_type != "none" else "",
+        "discount_cents": discount_cents,
+        "total_cents": total_cents,
+        **invoice_vat_amounts(contract, total_cents),
+    }
+
+
+def invoice_amounts_from_line_discounts(
+    contract: dict[str, Any],
+    subtotal_cents: int,
+    discount_cents: int,
+) -> dict[str, Any]:
+    subtotal = max(0, int(subtotal_cents or 0))
+    discount = max(0, min(subtotal, int(discount_cents or 0)))
+    total_cents = subtotal - discount
+    return {
+        "subtotal_cents": subtotal,
+        "discount_type": "line_items" if discount else "none",
+        "discount_value": "",
+        "discount_cents": discount,
+        "total_cents": total_cents,
+        **invoice_vat_amounts(contract, total_cents),
+    }
+
+
 def create_billing_invoice(
     contract_id: int,
     period_start: date,
@@ -3140,12 +3380,33 @@ def create_billing_invoice(
         include_flat_fees,
     )
     if selected_line_keys is not None:
-        lines = [line for line in lines if line.get("selection_key") in selected_line_keys]
+        lines = [
+            line
+            for line in lines
+            if line.get("selection_key") in selected_line_keys
+            and (
+                not line.get("depends_on_selection_key")
+                or line.get("depends_on_selection_key") in selected_line_keys
+            )
+        ]
     if not lines:
         return None
 
-    total_cents = sum(line["amount_cents"] for line in lines)
-    vat_amounts = invoice_vat_amounts(contract, total_cents)
+    prepared_lines: list[dict[str, Any]] = []
+    for line in lines:
+        prepared = dict(line)
+        line_subtotal_cents = int(prepared["amount_cents"] or 0)
+        prepared["subtotal_cents"] = line_subtotal_cents
+        prepared["discount_type"] = "none"
+        prepared["discount_value"] = ""
+        prepared["discount_cents"] = 0
+        prepared["amount_cents"] = line_subtotal_cents
+        prepared_lines.append(prepared)
+    lines = prepared_lines
+
+    subtotal_cents = sum(line["subtotal_cents"] for line in lines)
+    discount_cents = sum(line["discount_cents"] for line in lines)
+    amounts = invoice_amounts_from_line_discounts(contract, subtotal_cents, discount_cents)
     line_period_starts = [line["period_start"] for line in lines if line.get("period_start")]
     line_period_ends = [line["period_end"] for line in lines if line.get("period_end")]
     invoice_period_start = min(line_period_starts) if line_period_starts else period_start
@@ -3157,12 +3418,13 @@ def create_billing_invoice(
             """
             INSERT INTO invoices (
                 invoice_number, company_id, contract_id, period_start, period_end,
-                status, currency, total_cents, vat_treatment, vat_rate_percent,
+                status, currency, subtotal_cents, discount_type, discount_value,
+                discount_cents, total_cents, vat_treatment, vat_rate_percent,
                 vat_cents, gross_total_cents, include_licenses, include_services,
                 include_variable_costs, include_flat_fees, datev_invoice_number,
                 created_by, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 invoice_number,
@@ -3171,11 +3433,15 @@ def create_billing_invoice(
                 invoice_period_start.isoformat(),
                 invoice_period_end.isoformat(),
                 contract["currency"],
-                total_cents,
-                vat_amounts["vat_treatment"],
-                vat_amounts["vat_rate_percent"],
-                vat_amounts["vat_cents"],
-                vat_amounts["gross_total_cents"],
+                amounts["subtotal_cents"],
+                amounts["discount_type"],
+                amounts["discount_value"],
+                amounts["discount_cents"],
+                amounts["total_cents"],
+                amounts["vat_treatment"],
+                amounts["vat_rate_percent"],
+                amounts["vat_cents"],
+                amounts["gross_total_cents"],
                 1 if include_licenses else 0,
                 1 if include_services else 0,
                 1 if include_variable_costs else 0,
@@ -3192,9 +3458,10 @@ def create_billing_invoice(
                 """
                 INSERT INTO invoice_line_items (
                     invoice_id, item_type, source_id, datev_account, billing_key,
-                    description, quantity_text, amount_cents
+                    description, quantity_text, subtotal_cents, discount_type,
+                    discount_value, discount_cents, amount_cents
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     invoice_id,
@@ -3204,6 +3471,10 @@ def create_billing_invoice(
                     line.get("billing_key", ""),
                     line["description"],
                     line["quantity_text"],
+                    line["subtotal_cents"],
+                    line["discount_type"],
+                    line["discount_value"],
+                    line["discount_cents"],
                     line["amount_cents"],
                 ),
             )
@@ -3518,6 +3789,17 @@ def analytics_data(year: int) -> dict[str, Any]:
             """,
             (str(year),),
         ).fetchall()
+        discount_month_rows = connection.execute(
+            f"""
+            SELECT CAST(substr({invoice_date_sql}, 6, 2) AS INTEGER) AS month,
+                   COALESCE(SUM(discount_cents), 0) AS discount_cents
+            FROM invoices
+            WHERE status = 'finalized'
+              AND substr({invoice_date_sql}, 1, 4) = ?
+            GROUP BY CAST(substr({invoice_date_sql}, 6, 2) AS INTEGER)
+            """,
+            (str(year),),
+        ).fetchall()
         revenue_comparison_rows = connection.execute(
             f"""
             SELECT CAST(substr({invoice_date_sql}, 1, 4) AS INTEGER) AS revenue_year,
@@ -3601,6 +3883,7 @@ def analytics_data(year: int) -> dict[str, Any]:
             "invoice_count": 0,
             "invoice_amount_cents": 0,
             "avg_invoice_cents": 0,
+            "discount_cents": 0,
         }
         for month in range(1, 13)
     ]
@@ -3613,6 +3896,9 @@ def analytics_data(year: int) -> dict[str, Any]:
                 if row["invoice_count"]
                 else 0
             )
+    for row in discount_month_rows:
+        if row["month"]:
+            monthly[row["month"] - 1]["discount_cents"] = int(row["discount_cents"] or 0)
 
     revenue_mix = {"license": 0, "service": 0, "variable_cost": 0, "flat_fee": 0}
     for row in line_rows:
@@ -3751,6 +4037,9 @@ def analytics_data(year: int) -> dict[str, Any]:
         "invoiceActivity": {
             "count": [int(item["invoice_count"] or 0) for item in monthly],
             "averageAmount": [int(item["avg_invoice_cents"] or 0) for item in monthly],
+        },
+        "discounts": {
+            "values": [int(item["discount_cents"] or 0) for item in monthly],
         },
         "bookedHours": {
             "hours": booked_hours_by_month,
@@ -4588,6 +4877,224 @@ def flat_fees_index(request: Request, _: dict[str, Any] = Depends(require_permis
     return render(request, "flat_fees.html", {"flat_fees": [dict(row) for row in flat_fees]})
 
 
+def first_or_selected_contract(contract_id: int | None, contracts: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not contracts:
+        return None
+    available_ids = {item["id"] for item in contracts}
+    selected_id = contract_id if contract_id in available_ids else contracts[0]["id"]
+    return contract_item_form_base(selected_id)
+
+
+@app.get("/licenses/new")
+def new_global_license_form(
+    request: Request,
+    contract_id: int | None = Query(None),
+    _: dict[str, Any] = Depends(require_permission("contracts.manage")),
+):
+    contracts = contract_options()
+    contract = first_or_selected_contract(contract_id, contracts)
+    if contract is None:
+        raise HTTPException(status_code=400, detail="Bitte zuerst einen Vertrag anlegen.")
+    return render(
+        request,
+        "license_form.html",
+        {
+            "form_title": "Lizenz anlegen",
+            "submit_label": "Lizenz speichern",
+            "show_status": False,
+            "contracts": contracts,
+            "license": {
+                "company_name": "Stammdaten",
+                "contract_title": "Vertrag auswaehlen",
+                "contract_id": contract["id"],
+                "currency": contract["currency"],
+                "license_type_id": None,
+                "annual_amount_cents": 0,
+                "quantity": 1,
+                "start_date": contract["start_date"],
+                "end_date": "",
+                "billing_frequency": contract["license_billing_frequency"],
+                "billing_strategy": "standard",
+                "first_year_billing_frequency": contract["license_billing_frequency"],
+                "renewal_billing_frequency": contract["license_billing_frequency"],
+                "status": "active",
+                "notes": "",
+            },
+            "license_types": license_type_options(),
+            "form_action": "/licenses",
+            "cancel_url": "/licenses",
+        },
+    )
+
+
+@app.post("/licenses")
+def create_global_license(
+    contract_id: int = Form(...),
+    license_type_id: int = Form(...),
+    annual_amount: str = Form(...),
+    quantity: int = Form(1),
+    start_date: str = Form(...),
+    end_date: str = Form(""),
+    billing_frequency: str = Form(""),
+    billing_strategy: str = Form("standard"),
+    first_year_billing_frequency: str = Form(""),
+    renewal_billing_frequency: str = Form(""),
+    notes: str = Form(""),
+    user: dict[str, Any] = Depends(require_permission("contracts.manage")),
+):
+    create_license(
+        contract_id,
+        license_type_id,
+        annual_amount,
+        quantity,
+        start_date,
+        end_date,
+        billing_frequency,
+        billing_strategy,
+        first_year_billing_frequency,
+        renewal_billing_frequency,
+        notes,
+        user,
+    )
+    return redirect_to("/licenses")
+
+
+@app.get("/services/new")
+def new_global_service_form(
+    request: Request,
+    contract_id: int | None = Query(None),
+    _: dict[str, Any] = Depends(require_permission("contracts.manage")),
+):
+    contracts = contract_options()
+    contract = first_or_selected_contract(contract_id, contracts)
+    if contract is None:
+        raise HTTPException(status_code=400, detail="Bitte zuerst einen Vertrag anlegen.")
+    return render(
+        request,
+        "service_form.html",
+        {
+            "form_title": "Dienstleistung anlegen",
+            "submit_label": "Dienstleistung speichern",
+            "show_status": False,
+            "contracts": contracts,
+            "service": {
+                "company_name": "Stammdaten",
+                "contract_title": "Vertrag auswaehlen",
+                "contract_id": contract["id"],
+                "currency": contract["currency"],
+                "service_type_id": None,
+                "hourly_rate_cents": contract["service_hourly_rate_cents"],
+                "contracted_hours": None,
+                "billing_frequency": contract["service_billing_frequency"],
+                "status": "active",
+                "notes": "",
+            },
+            "service_types": service_type_options(),
+            "form_action": "/services",
+            "cancel_url": "/services",
+        },
+    )
+
+
+@app.post("/services")
+def create_global_service(
+    contract_id: int = Form(...),
+    service_type_id: int = Form(...),
+    hourly_rate: str = Form(...),
+    contracted_hours: str = Form(""),
+    billing_frequency: str = Form(""),
+    notes: str = Form(""),
+    user: dict[str, Any] = Depends(require_permission("contracts.manage")),
+):
+    create_service(
+        contract_id,
+        service_type_id,
+        hourly_rate,
+        contracted_hours,
+        billing_frequency,
+        notes,
+        user,
+    )
+    return redirect_to("/services")
+
+
+@app.get("/flat-fees/new")
+def new_global_flat_fee_form(
+    request: Request,
+    contract_id: int | None = Query(None),
+    _: dict[str, Any] = Depends(require_permission("contracts.manage")),
+):
+    contracts = contract_options()
+    contract = first_or_selected_contract(contract_id, contracts)
+    if contract is None:
+        raise HTTPException(status_code=400, detail="Bitte zuerst einen Vertrag anlegen.")
+    return render(
+        request,
+        "flat_fee_form.html",
+        {
+            "form_title": "Pauschale anlegen",
+            "submit_label": "Pauschale speichern",
+            "show_status": False,
+            "contracts": contracts,
+            "item": {
+                "company_name": "Stammdaten",
+                "contract_title": "Vertrag auswaehlen",
+                "contract_id": contract["id"],
+                "currency": contract["currency"],
+                "flat_fee_type_id": None,
+                "amount_cents": 0,
+                "fee_kind": "work_package",
+                "start_date": contract["start_date"],
+                "end_date": "",
+                "billing_frequency": "once",
+                "success_condition": "",
+                "expected_success_date": "",
+                "success_date": "",
+                "approval_status": "not_applicable",
+                "status": "active",
+                "notes": "",
+            },
+            "flat_fee_types": flat_fee_type_options(),
+            "form_action": "/flat-fees",
+            "cancel_url": "/flat-fees",
+        },
+    )
+
+
+@app.post("/flat-fees")
+def create_global_flat_fee(
+    contract_id: int = Form(...),
+    flat_fee_type_id: int = Form(...),
+    amount: str = Form(...),
+    fee_kind: str = Form("work_package"),
+    start_date: str = Form(...),
+    end_date: str = Form(""),
+    billing_frequency: str = Form("once"),
+    success_condition: str = Form(""),
+    expected_success_date: str = Form(""),
+    success_date: str = Form(""),
+    approval_status: str = Form("not_applicable"),
+    notes: str = Form(""),
+    user: dict[str, Any] = Depends(require_permission("contracts.manage")),
+):
+    create_flat_fee(
+        contract_id,
+        flat_fee_type_id,
+        amount,
+        fee_kind,
+        start_date,
+        end_date,
+        billing_frequency,
+        success_condition,
+        expected_success_date,
+        success_date,
+        approval_status,
+        notes,
+        user,
+    )
+    return redirect_to("/flat-fees")
+
+
 @app.get("/contracts/new")
 def contract_form(
     request: Request,
@@ -5197,7 +5704,7 @@ def new_flat_fee_form(
                 "success_condition": "",
                 "expected_success_date": "",
                 "success_date": "",
-                "approval_status": "pending",
+                "approval_status": "not_applicable",
                 "status": "active",
                 "notes": "",
             },
@@ -5928,7 +6435,7 @@ def create_flat_fee(
     success_condition: str = Form(""),
     expected_success_date: str = Form(""),
     success_date: str = Form(""),
-    approval_status: str = Form("pending"),
+    approval_status: str = Form("not_applicable"),
     notes: str = Form(""),
     _: dict[str, Any] = Depends(require_permission("contracts.manage")),
 ):
@@ -6651,17 +7158,20 @@ def create_billing(
     end = parse_iso_date(period_end)
     if start is None or end is None or start > end:
         raise HTTPException(status_code=400, detail="Bitte einen gueltigen Zeitraum angeben.")
-    invoice_id = create_billing_invoice(
-        contract_id,
-        start,
-        end,
-        include_licenses,
-        include_services,
-        include_variable_costs,
-        include_flat_fees,
-        user["id"],
-        set(selected_line_keys or []),
-    )
+    try:
+        invoice_id = create_billing_invoice(
+            contract_id,
+            start,
+            end,
+            include_licenses,
+            include_services,
+            include_variable_costs,
+            include_flat_fees,
+            user["id"],
+            set(selected_line_keys or []),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if invoice_id is None:
         query = (
             f"/billing?contract_id={contract_id}&period_start={start.isoformat()}"
@@ -6737,6 +7247,11 @@ def invoice_detail_context(invoice_id: int) -> dict[str, Any]:
     line_items = [dict(row) for row in lines]
     counted_license_sources: set[int] = set()
     for line in line_items:
+        line_subtotal = int(line.get("subtotal_cents") or 0)
+        if not line_subtotal:
+            line_subtotal = int(line.get("amount_cents") or 0) + int(line.get("discount_cents") or 0)
+        line["subtotal_cents"] = line_subtotal
+        line["stored_description"] = line.get("description", "")
         line["description"] = append_description_detail(line.get("description", ""), line.get("source_description"))
         quantity_text = line.get("quantity_text") or ""
         quantity_parts = quantity_text.split(" ", 1)
@@ -6758,6 +7273,9 @@ def invoice_detail_context(invoice_id: int) -> dict[str, Any]:
     invoice_dict["document_url"] = (
         f"/invoices/{invoice_id}/document" if invoice_dict.get("invoice_document_stored_filename") else None
     )
+    line_subtotal_cents = sum(int(line.get("subtotal_cents") or 0) for line in line_items)
+    if not invoice_dict.get("subtotal_cents") and line_subtotal_cents:
+        invoice_dict["subtotal_cents"] = line_subtotal_cents
     return {
         "invoice": invoice_dict,
         "lines": line_items,
@@ -6773,6 +7291,441 @@ def invoice_detail(
     _: dict[str, Any] = Depends(require_permission("billing.create")),
 ):
     return render(request, "invoice_detail.html", invoice_detail_context(invoice_id))
+
+
+@app.get("/invoices/{invoice_id}/positions/edit")
+def edit_invoice_positions(
+    request: Request,
+    invoice_id: int,
+    user: dict[str, Any] = Depends(require_permission("billing.create")),
+):
+    context = invoice_detail_context(invoice_id)
+    invoice = context["invoice"]
+    requires_superadmin = (
+        invoice["status"] != "draft"
+        or bool(invoice.get("datev_invoice_number") or invoice.get("datev_invoice_date"))
+    )
+    if requires_superadmin and not is_superadmin(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Finalisierte Rechnungspositionen koennen nur von SuperAdmins angepasst werden.",
+        )
+    return render(request, "invoice_positions_form.html", context)
+
+
+@app.post("/invoices/{invoice_id}/positions")
+def update_invoice_positions(
+    request: Request,
+    invoice_id: int,
+    line_item_ids: list[int] | None = Form(None),
+    line_datev_accounts: list[str] | None = Form(None),
+    line_descriptions: list[str] | None = Form(None),
+    line_quantity_texts: list[str] | None = Form(None),
+    line_subtotal_amounts: list[str] | None = Form(None),
+    line_discount_units: list[str] | None = Form(None),
+    line_discount_values: list[str] | None = Form(None),
+    user: dict[str, Any] = Depends(require_permission("billing.create")),
+):
+    timestamp = now_iso()
+    line_ids = line_item_ids or []
+
+    def posted(values: list[str] | None, index: int, default: str = "") -> str:
+        return values[index] if values is not None and index < len(values) else default
+
+    with database.connect() as connection:
+        invoice = connection.execute(
+            """
+            SELECT invoices.status AS invoice_status,
+                   invoices.datev_invoice_number,
+                   invoices.datev_invoice_date,
+                   contracts.vat_treatment AS contract_vat_treatment
+            FROM invoices
+            JOIN contracts ON contracts.id = invoices.contract_id
+            WHERE invoices.id = ?
+            """,
+            (invoice_id,),
+        ).fetchone()
+        if invoice is None:
+            raise HTTPException(status_code=404, detail="Rechnung nicht gefunden.")
+        requires_superadmin = (
+            invoice["invoice_status"] != "draft"
+            or bool(invoice["datev_invoice_number"] or invoice["datev_invoice_date"])
+        )
+        if requires_superadmin and not is_superadmin(user):
+            raise HTTPException(
+                status_code=403,
+                detail="Finalisierte Rechnungspositionen koennen nur von SuperAdmins angepasst werden.",
+            )
+
+        rows = connection.execute(
+            """
+            SELECT id
+            FROM invoice_line_items
+            WHERE invoice_id = ?
+            ORDER BY id
+            """,
+            (invoice_id,),
+        ).fetchall()
+        row_ids = [row["id"] for row in rows]
+        if not row_ids or set(line_ids) != set(row_ids) or len(line_ids) != len(row_ids):
+            context = invoice_detail_context(invoice_id)
+            context.update({"position_error": "Die Positionsdaten passen nicht zu dieser Rechnung."})
+            return render(request, "invoice_positions_form.html", context, status_code=400)
+
+        try:
+            for index, line_id in enumerate(line_ids):
+                datev_account = posted(line_datev_accounts, index).strip()
+                description = sanitize_rich_text(posted(line_descriptions, index))
+                quantity_text = required_text(posted(line_quantity_texts, index), "Menge")
+                subtotal_cents = parse_amount_to_cents(posted(line_subtotal_amounts, index))
+                if subtotal_cents <= 0:
+                    raise ValueError("Die Zwischensumme einer Position muss groesser als 0 sein.")
+                discount = normalize_line_discount(
+                    subtotal_cents,
+                    posted(line_discount_units, index, "absolute"),
+                    posted(line_discount_values, index),
+                )
+                amount_cents = max(0, subtotal_cents - discount["discount_cents"])
+                connection.execute(
+                    """
+                    UPDATE invoice_line_items
+                    SET datev_account = ?,
+                        description = ?,
+                        quantity_text = ?,
+                        subtotal_cents = ?,
+                        discount_type = ?,
+                        discount_value = ?,
+                        discount_cents = ?,
+                        amount_cents = ?
+                    WHERE id = ? AND invoice_id = ?
+                    """,
+                    (
+                        datev_account,
+                        description,
+                        quantity_text,
+                        subtotal_cents,
+                        discount["discount_type"],
+                        discount["discount_value"],
+                        discount["discount_cents"],
+                        amount_cents,
+                        line_id,
+                        invoice_id,
+                    ),
+                )
+        except ValueError as exc:
+            context = invoice_detail_context(invoice_id)
+            context.update({"position_error": str(exc)})
+            return render(request, "invoice_positions_form.html", context, status_code=400)
+
+        totals = connection.execute(
+            """
+            SELECT COALESCE(SUM(subtotal_cents), 0) AS subtotal_cents,
+                   COALESCE(SUM(discount_cents), 0) AS discount_cents
+            FROM invoice_line_items
+            WHERE invoice_id = ?
+            """,
+            (invoice_id,),
+        ).fetchone()
+        amounts = invoice_amounts_from_line_discounts(
+            {"vat_treatment": invoice["contract_vat_treatment"]},
+            totals["subtotal_cents"],
+            totals["discount_cents"],
+        )
+        connection.execute(
+            """
+            UPDATE invoices
+            SET subtotal_cents = ?,
+                discount_type = ?,
+                discount_value = ?,
+                discount_cents = ?,
+                total_cents = ?,
+                vat_treatment = ?,
+                vat_rate_percent = ?,
+                vat_cents = ?,
+                gross_total_cents = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                amounts["subtotal_cents"],
+                amounts["discount_type"],
+                amounts["discount_value"],
+                amounts["discount_cents"],
+                amounts["total_cents"],
+                amounts["vat_treatment"],
+                amounts["vat_rate_percent"],
+                amounts["vat_cents"],
+                amounts["gross_total_cents"],
+                timestamp,
+                invoice_id,
+            ),
+        )
+    return redirect_to(f"/invoices/{invoice_id}")
+
+
+@app.post("/invoices/{invoice_id}/line-discounts")
+def update_invoice_line_discounts(
+    request: Request,
+    invoice_id: int,
+    line_item_ids: list[int] | None = Form(None),
+    line_discount_units: list[str] | None = Form(None),
+    line_discount_values: list[str] | None = Form(None),
+    user: dict[str, Any] = Depends(require_permission("billing.create")),
+):
+    timestamp = now_iso()
+    with database.connect() as connection:
+        invoice = connection.execute(
+            """
+            SELECT invoices.status AS invoice_status,
+                   invoices.datev_invoice_number,
+                   invoices.datev_invoice_date,
+                   contracts.vat_treatment AS contract_vat_treatment
+            FROM invoices
+            JOIN contracts ON contracts.id = invoices.contract_id
+            WHERE invoices.id = ?
+            """,
+            (invoice_id,),
+        ).fetchone()
+        if invoice is None:
+            raise HTTPException(status_code=404, detail="Rechnung nicht gefunden.")
+        requires_superadmin = (
+            invoice["invoice_status"] != "draft"
+            or bool(invoice["datev_invoice_number"] or invoice["datev_invoice_date"])
+        )
+        if requires_superadmin and not is_superadmin(user):
+            raise HTTPException(
+                status_code=403,
+                detail="Finalisierte Rechnungen koennen nur von SuperAdmins angepasst werden.",
+            )
+
+        line_ids = line_item_ids or []
+        rows = connection.execute(
+            """
+            SELECT id, subtotal_cents, discount_cents, amount_cents
+            FROM invoice_line_items
+            WHERE invoice_id = ?
+            ORDER BY id
+            """,
+            (invoice_id,),
+        ).fetchall()
+        rows_by_id = {row["id"]: row for row in rows}
+        if set(line_ids) != set(rows_by_id):
+            raise HTTPException(status_code=400, detail="Rabattdaten passen nicht zu den Rechnungspositionen.")
+
+        try:
+            for index, line_id in enumerate(line_ids):
+                row = rows_by_id[line_id]
+                line_subtotal = int(row["subtotal_cents"] or 0)
+                if not line_subtotal:
+                    line_subtotal = int(row["amount_cents"] or 0) + int(row["discount_cents"] or 0)
+                unit = (line_discount_units or [])[index] if index < len(line_discount_units or []) else "absolute"
+                value = (line_discount_values or [])[index] if index < len(line_discount_values or []) else ""
+                line_discount = normalize_line_discount(line_subtotal, unit, value)
+                line_amount = max(0, line_subtotal - line_discount["discount_cents"])
+                connection.execute(
+                    """
+                    UPDATE invoice_line_items
+                    SET subtotal_cents = ?,
+                        discount_type = ?,
+                        discount_value = ?,
+                        discount_cents = ?,
+                        amount_cents = ?
+                    WHERE id = ? AND invoice_id = ?
+                    """,
+                    (
+                        line_subtotal,
+                        line_discount["discount_type"],
+                        line_discount["discount_value"],
+                        line_discount["discount_cents"],
+                        line_amount,
+                        line_id,
+                        invoice_id,
+                    ),
+                )
+        except ValueError as exc:
+            context = invoice_detail_context(invoice_id)
+            context.update({"discount_error": str(exc)})
+            return render(request, "invoice_detail.html", context, status_code=400)
+
+        totals = connection.execute(
+            """
+            SELECT COALESCE(SUM(subtotal_cents), 0) AS subtotal_cents,
+                   COALESCE(SUM(discount_cents), 0) AS discount_cents
+            FROM invoice_line_items
+            WHERE invoice_id = ?
+            """,
+            (invoice_id,),
+        ).fetchone()
+        amounts = invoice_amounts_from_line_discounts(
+            {"vat_treatment": invoice["contract_vat_treatment"]},
+            totals["subtotal_cents"],
+            totals["discount_cents"],
+        )
+        connection.execute(
+            """
+            UPDATE invoices
+            SET subtotal_cents = ?,
+                discount_type = ?,
+                discount_value = ?,
+                discount_cents = ?,
+                total_cents = ?,
+                vat_treatment = ?,
+                vat_rate_percent = ?,
+                vat_cents = ?,
+                gross_total_cents = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                amounts["subtotal_cents"],
+                amounts["discount_type"],
+                amounts["discount_value"],
+                amounts["discount_cents"],
+                amounts["total_cents"],
+                amounts["vat_treatment"],
+                amounts["vat_rate_percent"],
+                amounts["vat_cents"],
+                amounts["gross_total_cents"],
+                timestamp,
+                invoice_id,
+            ),
+        )
+    return redirect_to(f"/invoices/{invoice_id}")
+
+
+@app.post("/invoices/{invoice_id}/update")
+def update_invoice(
+    request: Request,
+    invoice_id: int,
+    invoice_number: str = Form(""),
+    period_start: str = Form(""),
+    period_end: str = Form(""),
+    datev_invoice_number: str = Form(""),
+    datev_invoice_date: str = Form(""),
+    _: dict[str, Any] = Depends(require_superadmin),
+):
+    form_values = {
+        "invoice_number": invoice_number,
+        "period_start": period_start,
+        "period_end": period_end,
+        "datev_invoice_number": datev_invoice_number,
+        "datev_invoice_date": datev_invoice_date,
+    }
+    try:
+        cleaned_invoice_number = required_text(invoice_number, "Interne Rechnungsnummer")
+        parsed_period_start = parse_iso_date(period_start)
+        parsed_period_end = parse_iso_date(period_end)
+        if parsed_period_start is None or parsed_period_end is None:
+            raise ValueError("Bitte einen gueltigen Abrechnungszeitraum eingeben.")
+        if parsed_period_end < parsed_period_start:
+            raise ValueError("Das Ende des Abrechnungszeitraums darf nicht vor dem Start liegen.")
+        cleaned_datev_invoice_number = datev_invoice_number.strip()
+        parsed_datev_invoice_date = parse_iso_date(datev_invoice_date) if datev_invoice_date.strip() else None
+        if datev_invoice_date.strip() and parsed_datev_invoice_date is None:
+            raise ValueError("Bitte ein gueltiges DATEV-Rechnungsdatum eingeben.")
+    except ValueError as exc:
+        context = invoice_detail_context(invoice_id)
+        context.update({"edit_error": str(exc), "form": form_values})
+        return render(request, "invoice_detail.html", context, status_code=400)
+
+    timestamp = now_iso()
+    with database.connect() as connection:
+        invoice = connection.execute(
+            """
+            SELECT invoices.status AS invoice_status,
+                   contracts.vat_treatment AS contract_vat_treatment
+            FROM invoices
+            JOIN contracts ON contracts.id = invoices.contract_id
+            WHERE invoices.id = ?
+            """,
+            (invoice_id,),
+        ).fetchone()
+        if invoice is None:
+            raise HTTPException(status_code=404, detail="Rechnung nicht gefunden.")
+        duplicate = connection.execute(
+            """
+            SELECT id
+            FROM invoices
+            WHERE invoice_number = ? AND id != ?
+            """,
+            (cleaned_invoice_number, invoice_id),
+        ).fetchone()
+        if duplicate is not None:
+            context = invoice_detail_context(invoice_id)
+            context.update({
+                "edit_error": "Diese interne Rechnungsnummer wird bereits verwendet.",
+                "form": form_values,
+            })
+            return render(request, "invoice_detail.html", context, status_code=400)
+        if invoice["invoice_status"] == "finalized":
+            if not cleaned_datev_invoice_number:
+                context = invoice_detail_context(invoice_id)
+                context.update({"edit_error": "Bitte die DATEV-Rechnungsnummer eingeben.", "form": form_values})
+                return render(request, "invoice_detail.html", context, status_code=400)
+            if parsed_datev_invoice_date is None:
+                context = invoice_detail_context(invoice_id)
+                context.update({"edit_error": "Bitte das DATEV-Rechnungsdatum eingeben.", "form": form_values})
+                return render(request, "invoice_detail.html", context, status_code=400)
+        totals = connection.execute(
+            """
+            SELECT COALESCE(SUM(
+                       CASE
+                           WHEN subtotal_cents IS NULL OR subtotal_cents = 0
+                           THEN amount_cents + COALESCE(discount_cents, 0)
+                           ELSE subtotal_cents
+                       END
+                   ), 0) AS subtotal_cents,
+                   COALESCE(SUM(discount_cents), 0) AS discount_cents
+            FROM invoice_line_items
+            WHERE invoice_id = ?
+            """,
+            (invoice_id,),
+        ).fetchone()
+        amounts = invoice_amounts_from_line_discounts(
+            {"vat_treatment": invoice["contract_vat_treatment"]},
+            totals["subtotal_cents"],
+            totals["discount_cents"],
+        )
+        connection.execute(
+            """
+            UPDATE invoices
+            SET invoice_number = ?,
+                period_start = ?,
+                period_end = ?,
+                datev_invoice_number = ?,
+                datev_invoice_date = ?,
+                subtotal_cents = ?,
+                discount_type = ?,
+                discount_value = ?,
+                discount_cents = ?,
+                total_cents = ?,
+                vat_treatment = ?,
+                vat_rate_percent = ?,
+                vat_cents = ?,
+                gross_total_cents = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                cleaned_invoice_number,
+                parsed_period_start.isoformat(),
+                parsed_period_end.isoformat(),
+                cleaned_datev_invoice_number,
+                parsed_datev_invoice_date.isoformat() if parsed_datev_invoice_date else None,
+                amounts["subtotal_cents"],
+                amounts["discount_type"],
+                amounts["discount_value"],
+                amounts["discount_cents"],
+                amounts["total_cents"],
+                amounts["vat_treatment"],
+                amounts["vat_rate_percent"],
+                amounts["vat_cents"],
+                amounts["gross_total_cents"],
+                timestamp,
+                invoice_id,
+            ),
+        )
+    return redirect_to(f"/invoices/{invoice_id}")
 
 
 @app.get("/invoices/{invoice_id}/document")
@@ -6832,7 +7785,7 @@ def upload_invoice_document(
 @app.post("/invoices/{invoice_id}/delete")
 def delete_invoice(
     invoice_id: int,
-    _: dict[str, Any] = Depends(require_permission("billing.create")),
+    user: dict[str, Any] = Depends(require_permission("billing.create")),
 ):
     timestamp = now_iso()
     with database.connect() as connection:
@@ -6841,9 +7794,53 @@ def delete_invoice(
             raise HTTPException(status_code=404, detail="Rechnung nicht gefunden.")
         if invoice["status"] != "draft":
             raise HTTPException(status_code=400, detail="Nur Rechnungsentwuerfe koennen geloescht werden.")
+        if (invoice["datev_invoice_number"] or invoice["datev_invoice_date"]) and not is_superadmin(user):
+            raise HTTPException(
+                status_code=403,
+                detail="Wieder geoeffnete DATEV-Rechnungen koennen nur von SuperAdmins geloescht werden.",
+            )
         release_draft_invoice_links(connection, invoice_id, timestamp)
         connection.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
     return redirect_to("/billing")
+
+
+@app.post("/invoices/{invoice_id}/reopen")
+def reopen_invoice(
+    invoice_id: int,
+    _: dict[str, Any] = Depends(require_superadmin),
+):
+    timestamp = now_iso()
+    with database.connect() as connection:
+        invoice = connection.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+        if invoice is None:
+            raise HTTPException(status_code=404, detail="Rechnung nicht gefunden.")
+        if invoice["status"] != "finalized":
+            return redirect_to(f"/invoices/{invoice_id}")
+        connection.execute(
+            """
+            UPDATE invoices
+            SET status = 'draft',
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (timestamp, invoice_id),
+        )
+        connection.execute(
+            """
+            UPDATE service_time_entries
+            SET invoice_id = NULL,
+                status = CASE WHEN status = 'billed' THEN 'approved' ELSE status END,
+                updated_at = ?
+            WHERE invoice_id = ?
+               OR id IN (
+                   SELECT time_entry_id
+                   FROM invoice_time_entries
+                   WHERE invoice_id = ?
+               )
+            """,
+            (timestamp, invoice_id, invoice_id),
+        )
+    return redirect_to(f"/invoices/{invoice_id}")
 
 
 @app.get("/settings")
@@ -6936,7 +7933,6 @@ def catalog_index(
     tab: str = Query("licenses"),
     _: dict[str, Any] = Depends(require_permission("catalog.manage")),
 ):
-    active_tab = tab if tab in {"licenses", "services", "flat_fees"} else "licenses"
     with database.connect() as connection:
         license_types = connection.execute(
             """
@@ -6968,26 +7964,147 @@ def catalog_index(
             ORDER BY flat_fee_types.name
             """
         ).fetchall()
-    license_type_items = [dict(row) for row in license_types]
-    for item in license_type_items:
-        item["is_seeded"] = item["name"] in DEFAULT_LICENSE_TYPE_NAMES
-    service_type_items = [dict(row) for row in service_types]
-    for item in service_type_items:
-        item["is_seeded"] = item["name"] in DEFAULT_SERVICE_TYPE_NAMES
-    flat_fee_type_items = [dict(row) for row in flat_fee_types]
-    for item in flat_fee_type_items:
-        item["is_seeded"] = False
+
+    catalog_items: list[dict[str, Any]] = []
+    for row in license_types:
+        item = dict(row)
+        item.update(
+            {
+                "kind": "license",
+                "kind_label": "Lizenzart",
+                "default_hourly_rate_cents": None,
+                "edit_url": f"/catalog/license-types/{item['id']}/edit",
+                "activate_url": f"/catalog/license-types/{item['id']}/activate",
+                "delete_url": f"/catalog/license-types/{item['id']}/delete",
+                "is_seeded": item["name"] in DEFAULT_LICENSE_TYPE_NAMES,
+            }
+        )
+        catalog_items.append(item)
+    for row in service_types:
+        item = dict(row)
+        item.update(
+            {
+                "kind": "service",
+                "kind_label": "Dienstleistungsart",
+                "edit_url": f"/catalog/service-types/{item['id']}/edit",
+                "activate_url": f"/catalog/service-types/{item['id']}/activate",
+                "delete_url": f"/catalog/service-types/{item['id']}/delete",
+                "is_seeded": item["name"] in DEFAULT_SERVICE_TYPE_NAMES,
+            }
+        )
+        catalog_items.append(item)
+    for row in flat_fee_types:
+        item = dict(row)
+        item.update(
+            {
+                "kind": "flat_fee",
+                "kind_label": "Pauschalart",
+                "default_hourly_rate_cents": None,
+                "edit_url": f"/catalog/flat-fee-types/{item['id']}/edit",
+                "activate_url": f"/catalog/flat-fee-types/{item['id']}/activate",
+                "delete_url": f"/catalog/flat-fee-types/{item['id']}/delete",
+                "is_seeded": False,
+            }
+        )
+        catalog_items.append(item)
+    catalog_items.sort(key=lambda item: (item["kind_label"], (item["name"] or "").lower()))
 
     return render(
         request,
         "catalog.html",
         {
-            "active_tab": active_tab,
-            "license_types": license_type_items,
-            "service_types": service_type_items,
-            "flat_fee_types": flat_fee_type_items,
+            "catalog_items": catalog_items,
+            "catalog_kind_options": {
+                "license": "Lizenzart",
+                "service": "Dienstleistungsart",
+                "flat_fee": "Pauschalart",
+            },
+            "form": {"catalog_kind": tab if tab in {"license", "service", "flat_fee"} else "license"},
         },
     )
+
+
+@app.post("/catalog/types")
+def create_catalog_type(
+    request: Request,
+    catalog_kind: str = Form(...),
+    name: str = Form(...),
+    datev_account: str = Form(...),
+    description: str = Form(""),
+    _: dict[str, Any] = Depends(require_permission("catalog.manage")),
+):
+    form_values = {
+        "catalog_kind": catalog_kind,
+        "name": name,
+        "datev_account": datev_account,
+        "description": description,
+    }
+    try:
+        cleaned_kind = catalog_kind.strip()
+        if cleaned_kind not in {"license", "service", "flat_fee"}:
+            raise ValueError("Bitte eine gueltige Katalogart auswaehlen.")
+        cleaned_name = required_text(name, "Name")
+        cleaned_datev_account = required_text(datev_account, "DATEV-Konto")
+        default_rate_cents = 0
+    except ValueError as exc:
+        response = catalog_index(request)
+        response.context.update({"form": form_values, "error": str(exc)})
+        response.status_code = 400
+        return response
+
+    timestamp = now_iso()
+    with database.connect() as connection:
+        if cleaned_kind == "license":
+            connection.execute(
+                """
+                INSERT INTO license_types (name, datev_account, description, active, created_at, updated_at)
+                VALUES (?, ?, ?, 1, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    datev_account = excluded.datev_account,
+                    description = excluded.description,
+                    active = 1,
+                    updated_at = excluded.updated_at
+                """,
+                (cleaned_name, cleaned_datev_account, description.strip(), timestamp, timestamp),
+            )
+        elif cleaned_kind == "service":
+            connection.execute(
+                """
+                INSERT INTO service_types (
+                    name, datev_account, default_hourly_rate_cents,
+                    description, active, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, 1, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    datev_account = excluded.datev_account,
+                    default_hourly_rate_cents = excluded.default_hourly_rate_cents,
+                    description = excluded.description,
+                    active = 1,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    cleaned_name,
+                    cleaned_datev_account,
+                    default_rate_cents,
+                    description.strip(),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+        else:
+            connection.execute(
+                """
+                INSERT INTO flat_fee_types (name, datev_account, description, active, created_at, updated_at)
+                VALUES (?, ?, ?, 1, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    datev_account = excluded.datev_account,
+                    description = excluded.description,
+                    active = 1,
+                    updated_at = excluded.updated_at
+                """,
+                (cleaned_name, cleaned_datev_account, description.strip(), timestamp, timestamp),
+            )
+    return redirect_to("/catalog")
 
 
 @app.post("/catalog/license-types")
@@ -7011,7 +8128,7 @@ def create_license_type(
             """,
             (name.strip(), datev_account.strip(), description.strip(), timestamp, timestamp),
         )
-    return redirect_to("/catalog?tab=licenses")
+    return redirect_to("/catalog")
 
 
 @app.get("/catalog/license-types/{type_id}/edit")
@@ -7034,7 +8151,7 @@ def edit_license_type_form(
             "catalog_kind": "license",
             "form_title": "Lizenzart bearbeiten",
             "form_action": f"/catalog/license-types/{type_id}/update",
-            "cancel_url": "/catalog?tab=licenses",
+            "cancel_url": "/catalog",
             "form": dict(license_type),
         },
     )
@@ -7070,7 +8187,7 @@ def update_license_type(
                 "catalog_kind": "license",
                 "form_title": "Lizenzart bearbeiten",
                 "form_action": f"/catalog/license-types/{type_id}/update",
-                "cancel_url": "/catalog?tab=licenses",
+                "cancel_url": "/catalog",
                 "form": form_values,
                 "error": str(exc),
             },
@@ -7097,7 +8214,7 @@ def update_license_type(
                     "catalog_kind": "license",
                     "form_title": "Lizenzart bearbeiten",
                     "form_action": f"/catalog/license-types/{type_id}/update",
-                    "cancel_url": "/catalog?tab=licenses",
+                    "cancel_url": "/catalog",
                     "form": form_values,
                     "error": "Eine Lizenzart mit diesem Namen existiert bereits.",
                 },
@@ -7122,7 +8239,7 @@ def update_license_type(
                 type_id,
             ),
         )
-    return redirect_to("/catalog?tab=licenses")
+    return redirect_to("/catalog")
 
 
 @app.post("/catalog/license-types/{type_id}/activate")
@@ -7142,7 +8259,7 @@ def activate_license_type(
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Lizenzart nicht gefunden.")
-    return redirect_to("/catalog?tab=licenses")
+    return redirect_to("/catalog")
 
 
 @app.post("/catalog/license-types/{type_id}/delete")
@@ -7173,7 +8290,7 @@ def delete_license_type(
                 """,
                 (timestamp, type_id),
             )
-    return redirect_to("/catalog?tab=licenses")
+    return redirect_to("/catalog")
 
 
 @app.post("/catalog/service-types")
@@ -7210,7 +8327,7 @@ def create_service_type(
                 timestamp,
             ),
         )
-    return redirect_to("/catalog?tab=services")
+    return redirect_to("/catalog")
 
 
 @app.get("/catalog/service-types/{type_id}/edit")
@@ -7235,7 +8352,7 @@ def edit_service_type_form(
             "catalog_kind": "service",
             "form_title": "Dienstleistungsart bearbeiten",
             "form_action": f"/catalog/service-types/{type_id}/update",
-            "cancel_url": "/catalog?tab=services",
+            "cancel_url": "/catalog",
             "form": form_values,
         },
     )
@@ -7263,8 +8380,7 @@ def update_service_type(
     try:
         cleaned_name = required_text(name, "Name")
         cleaned_datev_account = required_text(datev_account, "DATEV-Konto")
-        cleaned_rate = required_text(default_hourly_rate, f"Standard-{rate_unit_label()}")
-        default_rate_cents = parse_rate_to_hourly_cents(cleaned_rate)
+        default_rate_cents = parse_rate_to_hourly_cents(default_hourly_rate or "0")
         if active not in {"0", "1"}:
             raise ValueError("Bitte einen gueltigen Status auswaehlen.")
     except ValueError as exc:
@@ -7275,7 +8391,7 @@ def update_service_type(
                 "catalog_kind": "service",
                 "form_title": "Dienstleistungsart bearbeiten",
                 "form_action": f"/catalog/service-types/{type_id}/update",
-                "cancel_url": "/catalog?tab=services",
+                "cancel_url": "/catalog",
                 "form": form_values,
                 "error": str(exc),
             },
@@ -7302,7 +8418,7 @@ def update_service_type(
                     "catalog_kind": "service",
                     "form_title": "Dienstleistungsart bearbeiten",
                     "form_action": f"/catalog/service-types/{type_id}/update",
-                    "cancel_url": "/catalog?tab=services",
+                    "cancel_url": "/catalog",
                     "form": form_values,
                     "error": "Eine Dienstleistungsart mit diesem Namen existiert bereits.",
                 },
@@ -7329,7 +8445,7 @@ def update_service_type(
                 type_id,
             ),
         )
-    return redirect_to("/catalog?tab=services")
+    return redirect_to("/catalog")
 
 
 @app.post("/catalog/service-types/{type_id}/activate")
@@ -7349,7 +8465,7 @@ def activate_service_type(
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Dienstleistungsart nicht gefunden.")
-    return redirect_to("/catalog?tab=services")
+    return redirect_to("/catalog")
 
 
 @app.post("/catalog/service-types/{type_id}/delete")
@@ -7380,7 +8496,7 @@ def delete_service_type(
                 """,
                 (timestamp, type_id),
             )
-    return redirect_to("/catalog?tab=services")
+    return redirect_to("/catalog")
 
 
 @app.post("/catalog/flat-fee-types")
@@ -7404,7 +8520,7 @@ def create_flat_fee_type(
             """,
             (name.strip(), datev_account.strip(), description.strip(), timestamp, timestamp),
         )
-    return redirect_to("/catalog?tab=flat_fees")
+    return redirect_to("/catalog")
 
 
 @app.get("/catalog/flat-fee-types/{type_id}/edit")
@@ -7427,7 +8543,7 @@ def edit_flat_fee_type_form(
             "catalog_kind": "flat_fee",
             "form_title": "Pauschalart bearbeiten",
             "form_action": f"/catalog/flat-fee-types/{type_id}/update",
-            "cancel_url": "/catalog?tab=flat_fees",
+            "cancel_url": "/catalog",
             "form": dict(flat_fee_type),
         },
     )
@@ -7463,7 +8579,7 @@ def update_flat_fee_type(
                 "catalog_kind": "flat_fee",
                 "form_title": "Pauschalart bearbeiten",
                 "form_action": f"/catalog/flat-fee-types/{type_id}/update",
-                "cancel_url": "/catalog?tab=flat_fees",
+                "cancel_url": "/catalog",
                 "form": form_values,
                 "error": str(exc),
             },
@@ -7490,7 +8606,7 @@ def update_flat_fee_type(
                     "catalog_kind": "flat_fee",
                     "form_title": "Pauschalart bearbeiten",
                     "form_action": f"/catalog/flat-fee-types/{type_id}/update",
-                    "cancel_url": "/catalog?tab=flat_fees",
+                    "cancel_url": "/catalog",
                     "form": form_values,
                     "error": "Eine Pauschalart mit diesem Namen existiert bereits.",
                 },
@@ -7515,7 +8631,7 @@ def update_flat_fee_type(
                 type_id,
             ),
         )
-    return redirect_to("/catalog?tab=flat_fees")
+    return redirect_to("/catalog")
 
 
 @app.post("/catalog/flat-fee-types/{type_id}/activate")
@@ -7535,7 +8651,7 @@ def activate_flat_fee_type(
         )
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Pauschalart nicht gefunden.")
-    return redirect_to("/catalog?tab=flat_fees")
+    return redirect_to("/catalog")
 
 
 @app.post("/catalog/flat-fee-types/{type_id}/delete")
@@ -7566,7 +8682,7 @@ def delete_flat_fee_type(
                 """,
                 (timestamp, type_id),
             )
-    return redirect_to("/catalog?tab=flat_fees")
+    return redirect_to("/catalog")
 
 
 @app.post("/invoices/{invoice_id}/finalize")
@@ -7575,7 +8691,7 @@ def finalize_invoice(
     invoice_id: int,
     datev_invoice_number: str = Form(""),
     datev_invoice_date: str = Form(""),
-    _: dict[str, Any] = Depends(require_permission("billing.create")),
+    user: dict[str, Any] = Depends(require_permission("billing.create")),
 ):
     form_values = {
         "datev_invoice_number": datev_invoice_number,
@@ -7600,6 +8716,11 @@ def finalize_invoice(
             raise HTTPException(status_code=404, detail="Rechnung nicht gefunden.")
         if invoice["status"] != "draft":
             return redirect_to(f"/invoices/{invoice_id}")
+        if (invoice["datev_invoice_number"] or invoice["datev_invoice_date"]) and not is_superadmin(user):
+            raise HTTPException(
+                status_code=403,
+                detail="Wieder geoeffnete DATEV-Rechnungen koennen nur von SuperAdmins finalisiert werden.",
+            )
         connection.execute(
             """
             UPDATE invoices
