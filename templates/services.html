@@ -29,6 +29,7 @@
         <th>Max. Volumen</th>
         <th>Abrechnung</th>
         <th>Status</th>
+        {% if is_superadmin %}<th>Aktion</th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -59,9 +60,22 @@
         <td>{{ service.contracted_volume_cents | money(service.currency) }}</td>
         <td>{{ service.billing_frequency | frequency_label }}</td>
         <td><span class="status {{ service.status }}">{{ service.status | status_label }}</span></td>
+        {% if is_superadmin %}
+        <td class="action-cell">
+          <details class="row-action-menu">
+            <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+            <div class="row-action-list">
+              <a class="button secondary" href="/contracts/{{ service.contract_id }}/services/{{ service.id }}/edit">Bearbeiten</a>
+              <form class="inline-row-actions" method="post" action="/contracts/{{ service.contract_id }}/services/{{ service.id }}/delete">
+                <button class="button danger" type="submit">Entfernen</button>
+              </form>
+            </div>
+          </details>
+        </td>
+        {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="10" class="empty">Keine Dienstleistungen vorhanden.</td></tr>
+      <tr><td colspan="{% if is_superadmin %}11{% else %}10{% endif %}" class="empty">Keine Dienstleistungen vorhanden.</td></tr>
       {% endfor %}
     </tbody>
   </table>

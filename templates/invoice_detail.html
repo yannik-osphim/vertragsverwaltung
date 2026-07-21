@@ -326,4 +326,15 @@
   </div>
 </section>
 {% endif %}
+
+{% if invoice.document_url %}
+<section class="analytics-band">
+  <div class="section-title">
+    <h2>Rechnungsdokument</h2>
+    <a class="button secondary" href="{{ invoice.document_url }}">PDF oeffnen</a>
+  </div>
+  <iframe class="pdf-viewer" src="{{ invoice.document_url }}" title="Rechnungsdokument"></iframe>
+  <p class="muted">Falls der Viewer nicht laedt: <a href="{{ invoice.document_url }}">PDF oeffnen</a>.</p>
+</section>
+{% endif %}
 {% endblock %}

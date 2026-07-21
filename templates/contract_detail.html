@@ -31,6 +31,26 @@
 </nav>
 
 {% if active_contract_tab == 'overview' %}
+<section class="metric-grid">
+  <article class="metric">
+    <span>Lizenzen</span>
+    <strong>{{ licenses | length }}</strong>
+  </article>
+  <article class="metric">
+    <span>Dienstleistungen</span>
+    <strong>{{ services | length }}</strong>
+  </article>
+  <article class="metric warning">
+    <span>DL offen freigegeben</span>
+    <strong>{{ service_volume.approved_unbilled_cents | money(contract.currency) }}</strong>
+    <small>{{ service_volume.approved_unbilled_hours | work_quantity }}</small>
+  </article>
+  <article class="metric">
+    <span>Finalisierte Rechnungen</span>
+    <strong>{{ invoices | length }}</strong>
+  </article>
+</section>
+
 <section class="detail-panel contract-overview-panel">
   <div class="detail-header">
     <div>
@@ -55,7 +75,6 @@
     <div><dt>Rechnungsempfaenger</dt><dd>{{ contract.billing_recipient_name or "-" }}<br><span class="muted">{{ contract.billing_recipient_email or "-" }} / {{ contract.billing_recipient_phone or "-" }}</span></dd></div>
     <div><dt>DL offen freigegeben</dt><dd>{{ service_volume.approved_unbilled_cents | money(contract.currency) }} / {{ service_volume.approved_unbilled_hours | work_quantity }}</dd></div>
     <div><dt>DL offen eingereicht</dt><dd>{{ service_volume.submitted_unbilled_cents | money(contract.currency) }} / {{ service_volume.submitted_unbilled_hours | work_quantity }}</dd></div>
-    <div><dt>Dokument</dt><dd>{% if contract.document_url %}<a href="{{ contract.document_url }}">PDF oeffnen</a>{% else %}-{% endif %}</dd></div>
   </dl>
 
   {% if contract.notes %}
@@ -87,35 +106,18 @@
     {% endif %}
   </div>
 
-  {% if contract.document_url %}
-  <div class="history">
-    <h3>Vertragsdokument</h3>
-    <object class="pdf-viewer" data="{{ contract.document_url }}" type="application/pdf">
-      <p>Das PDF kann <a href="{{ contract.document_url }}">hier geoeffnet</a> werden.</p>
-    </object>
-  </div>
-  {% endif %}
 </section>
 
-<section class="metric-grid">
-  <article class="metric">
-    <span>Lizenzen</span>
-    <strong>{{ licenses | length }}</strong>
-  </article>
-  <article class="metric">
-    <span>Dienstleistungen</span>
-    <strong>{{ services | length }}</strong>
-  </article>
-  <article class="metric warning">
-    <span>DL offen freigegeben</span>
-    <strong>{{ service_volume.approved_unbilled_cents | money(contract.currency) }}</strong>
-    <small>{{ service_volume.approved_unbilled_hours | work_quantity }}</small>
-  </article>
-  <article class="metric">
-    <span>Finalisierte Rechnungen</span>
-    <strong>{{ invoices | length }}</strong>
-  </article>
+{% if contract.document_url %}
+<section class="analytics-band contract-document-panel">
+  <div class="section-title">
+    <h2>Vertragsdokument</h2>
+    <a class="button secondary" href="{{ contract.document_url }}">PDF oeffnen</a>
+  </div>
+  <iframe class="pdf-viewer" src="{{ contract.document_url }}" title="Vertragsdokument"></iframe>
+  <p class="muted">Falls der Viewer nicht laedt: <a href="{{ contract.document_url }}">PDF oeffnen</a>.</p>
 </section>
+{% endif %}
 {% endif %}
 
 {% if active_contract_tab == 'invoices' %}

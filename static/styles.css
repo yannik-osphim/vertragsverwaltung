@@ -434,7 +434,8 @@ label small {
 }
 
 table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
 }
 
@@ -756,6 +757,7 @@ th {
 .catalog-panel {
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .billing-filter-panel {
@@ -909,6 +911,7 @@ th {
 .analytics-band,
 .table-wrap,
 .action-item {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -1043,11 +1046,16 @@ th {
 }
 
 .table-wrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   overflow-x: auto;
 }
 
 .table-wrap.action-menu-open {
   overflow-x: auto;
+  padding-bottom: 7rem;
 }
 
 .table-tools {
@@ -1211,9 +1219,9 @@ th {
 }
 
 .row-action-list {
-  position: fixed;
-  left: var(--row-action-left, auto);
-  top: var(--row-action-top, auto);
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
   z-index: 40;
   display: grid;
   gap: 0.35rem;
@@ -1914,7 +1922,7 @@ th {
 
 .pdf-viewer {
   width: 100%;
-  min-height: 560px;
+  min-height: 1120px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--soft-surface);

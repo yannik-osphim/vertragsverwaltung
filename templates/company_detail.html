@@ -35,6 +35,30 @@
 </nav>
 
 {% if active_company_tab == 'overview' %}
+<section class="metric-grid">
+  <article class="metric success">
+    <span>Aktive Lizenzen</span>
+    <strong>{{ company_metrics.active_license_count }}</strong>
+    <small>{{ company_metrics.active_license_quantity }} Lizenzmenge</small>
+  </article>
+  <article class="metric">
+    <span>Aktiver Lizenz-ARR</span>
+    <strong>{{ company_metrics.active_license_arr_cents | money }}</strong>
+  </article>
+  {% if has_permission('billing.create') or has_permission('analytics.view') %}
+  <article class="metric">
+    <span>In Rechnung gestellt</span>
+    <strong>{{ invoice_summary.total_cents | money }}</strong>
+  </article>
+  {% endif %}
+  {% if has_permission('time.approve') %}
+  <article class="metric warning">
+    <span>Gebuchte Stunden</span>
+    <strong>{{ company_metrics.booked_hours | work_quantity }}</strong>
+  </article>
+  {% endif %}
+</section>
+
 <section class="detail-layout">
   <div class="detail-panel">
     <div class="detail-header">
@@ -93,30 +117,6 @@
       {% endif %}
     </dl>
   </aside>
-</section>
-
-<section class="metric-grid">
-  <article class="metric success">
-    <span>Aktive Lizenzen</span>
-    <strong>{{ company_metrics.active_license_count }}</strong>
-    <small>{{ company_metrics.active_license_quantity }} Lizenzmenge</small>
-  </article>
-  <article class="metric">
-    <span>Aktiver Lizenz-ARR</span>
-    <strong>{{ company_metrics.active_license_arr_cents | money }}</strong>
-  </article>
-  {% if has_permission('billing.create') or has_permission('analytics.view') %}
-  <article class="metric">
-    <span>In Rechnung gestellt</span>
-    <strong>{{ invoice_summary.total_cents | money }}</strong>
-  </article>
-  {% endif %}
-  {% if has_permission('time.approve') %}
-  <article class="metric warning">
-    <span>Gebuchte Stunden</span>
-    <strong>{{ company_metrics.booked_hours | work_quantity }}</strong>
-  </article>
-  {% endif %}
 </section>
 
 {% if has_permission('billing.create') or has_permission('analytics.view') %}

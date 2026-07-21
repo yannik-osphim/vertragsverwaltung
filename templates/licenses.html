@@ -31,6 +31,7 @@
         <th>Start</th>
         <th>Ende</th>
         <th>Status</th>
+        {% if is_superadmin %}<th>Aktion</th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -57,9 +58,22 @@
         <td>{{ license.start_date | date_de }}</td>
         <td>{{ license.end_date | date_de }}</td>
         <td><span class="status {{ license.status }}">{{ license.status | status_label }}</span></td>
+        {% if is_superadmin %}
+        <td class="action-cell">
+          <details class="row-action-menu">
+            <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+            <div class="row-action-list">
+              <a class="button secondary" href="/contracts/{{ license.contract_id }}/licenses/{{ license.id }}/edit">Bearbeiten</a>
+              <form class="inline-row-actions" method="post" action="/contracts/{{ license.contract_id }}/licenses/{{ license.id }}/delete">
+                <button class="button danger" type="submit">Entfernen</button>
+              </form>
+            </div>
+          </details>
+        </td>
+        {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="12" class="empty">Keine Lizenzen vorhanden.</td></tr>
+      <tr><td colspan="{% if is_superadmin %}13{% else %}12{% endif %}" class="empty">Keine Lizenzen vorhanden.</td></tr>
       {% endfor %}
     </tbody>
   </table>
