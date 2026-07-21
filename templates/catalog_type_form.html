@@ -25,12 +25,6 @@
         <span>DATEV-Konto <span class="required-marker" title="Pflichtfeld">*</span></span>
         <input name="datev_account" value="{{ form.datev_account or '' }}" required>
       </label>
-      {% if catalog_kind == 'service' %}
-      <label>
-        <span>Standard-{{ rate_unit_label }} <span class="required-marker" title="Pflichtfeld">*</span></span>
-        <input name="default_hourly_rate" inputmode="decimal" value="{{ form.default_hourly_rate or '' }}" required>
-      </label>
-      {% endif %}
       <label>
         <span>Status</span>
         <select name="active">

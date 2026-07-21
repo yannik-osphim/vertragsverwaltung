@@ -177,6 +177,7 @@
           <th>Unternehmen</th>
           <th>Vertrag</th>
           <th>Zeitraum</th>
+          <th>Rabatt</th>
           <th>Netto</th>
           <th>Brutto</th>
           <th>Status</th>
@@ -191,12 +192,13 @@
           <td>{{ invoice.company_name }}</td>
           <td>{{ invoice.contract_number }}</td>
           <td>{{ invoice.period_start | date_de }} - {{ invoice.period_end | date_de }}</td>
+          <td>{{ invoice.discount_cents | money(invoice.currency) }}</td>
           <td>{{ invoice.total_cents | money(invoice.currency) }}</td>
           <td>{{ (invoice.gross_total_cents or invoice.total_cents) | money(invoice.currency) }}</td>
           <td><span class="status {{ invoice.status }}">{{ invoice.status | status_label }}</span></td>
         </tr>
         {% else %}
-        <tr><td colspan="9" class="empty">Noch keine Rechnungen vorhanden.</td></tr>
+        <tr><td colspan="10" class="empty">Noch keine Rechnungen vorhanden.</td></tr>
         {% endfor %}
       </tbody>
     </table>

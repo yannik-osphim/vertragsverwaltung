@@ -10,6 +10,16 @@
 </section>
 
 <form class="form-grid" method="post" action="{{ form_action }}" data-flat-fee-form>
+  {% if contracts %}
+  <label class="span-2">
+    <span>Vertrag</span>
+    <select name="contract_id" required>
+      {% for contract in contracts %}
+      <option value="{{ contract.id }}" {% if item.contract_id == contract.id %}selected{% endif %}>{{ contract.company_name }} - {{ contract.contract_number }} - {{ contract.title }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
   <label>
     <span>Pauschalart</span>
     <select name="flat_fee_type_id" required>

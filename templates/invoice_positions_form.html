@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Positionen bearbeiten - {{ invoice.invoice_number }}{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Rechnung / Positionen</p>
+    <h1>Positionen bearbeiten</h1>
+  </div>
+  <a class="button subtle" href="/invoices/{{ invoice.id }}">Zurueck</a>
+</section>
+
+{% if position_error %}
+<p class="alert">{{ position_error }}</p>
+{% endif %}
+
+<form class="stack invoice-position-form" method="post" action="/invoices/{{ invoice.id }}/positions">
+  <section class="detail-panel">
+    <div class="detail-header">
+      <div>
+        <span class="status {{ invoice.status }}">{{ invoice.status | status_label }}</span>
+        <h2>{{ invoice.invoice_number }}</h2>
+        <p class="muted">{{ invoice.company_name }} - {{ invoice.contract_number }}</p>
+      </div>
+      <strong>{{ (invoice.gross_total_cents or invoice.total_cents) | money(invoice.currency) }}</strong>
+    </div>
+  </section>
+
+  <div class="invoice-position-list">
+    {% for line in lines %}
+    <section class="detail-panel invoice-position-editor">
+      <div class="section-title">
+        <div>
+          <span class="status neutral">{{ line.item_type | item_type_label }}</span>
+          <h2>Position {{ loop.index }}</h2>
+        </div>
+        <strong>{{ line.amount_cents | money(invoice.currency) }}</strong>
+      </div>
+
+      <input type="hidden" name="line_item_ids" value="{{ line.id }}">
+      <div class="form-grid">
+        <label>
+          <span>DATEV-Konto</span>
+          <input name="line_datev_accounts" value="{{ line.datev_account or '' }}">
+        </label>
+        <label>
+          <span>Menge</span>
+          <input name="line_quantity_texts" value="{{ line.quantity_text or '' }}" required>
+        </label>
+        <label>
+          <span>Zwischensumme</span>
+          <input name="line_subtotal_amounts" inputmode="decimal" value="{{ line.subtotal_cents | amount_input }}" required>
+        </label>
+        <label>
+          <span>Rabatt</span>
+          <input name="line_discount_values" inputmode="decimal" value="{{ line.discount_value or '' }}" placeholder="0">
+        </label>
+        <label>
+          <span>Rabatteinheit</span>
+          <select name="line_discount_units">
+            {% for key, label in line_discount_units.items() %}
+            <option value="{{ key }}" {% if line.discount_type == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="span-2">
+          <span>Beschreibung</span>
+          <textarea name="line_descriptions" data-rich-text rows="5">{{ line.stored_description or line.description or '' }}</textarea>
+        </label>
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+
+  <div class="form-actions">
+    <a class="button subtle" href="/invoices/{{ invoice.id }}">Abbrechen</a>
+    <button class="button primary" type="submit">Positionen speichern</button>
+  </div>
+</form>
+{% endblock %}

@@ -3,9 +3,12 @@
 {% block content %}
 <section class="page-heading">
   <div>
-    <p class="eyebrow">Entitaeten</p>
+    <p class="eyebrow">Stammdaten</p>
     <h1>Pauschalen</h1>
   </div>
+  {% if has_permission('contracts.manage') %}
+  <a class="button primary" href="/flat-fees/new">Pauschale anlegen</a>
+  {% endif %}
 </section>
 
 {% set active_entity = 'flat_fees' %}

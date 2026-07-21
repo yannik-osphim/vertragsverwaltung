@@ -32,7 +32,7 @@
     <nav class="nav">
       <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
       {% if has_permission('companies.view') or has_permission('contracts.view') %}
-      <a href="/companies" class="{% if request.url.path.startswith('/companies') or request.url.path.startswith('/contracts') or request.url.path.startswith('/licenses') or request.url.path.startswith('/services') or request.url.path.startswith('/flat-fees') %}active{% endif %}">Entitaeten</a>
+      <a href="/companies" class="{% if request.url.path.startswith('/companies') or request.url.path.startswith('/contracts') or request.url.path.startswith('/licenses') or request.url.path.startswith('/services') or request.url.path.startswith('/flat-fees') %}active{% endif %}">Stammdaten</a>
       {% endif %}
       {% if has_permission('time.approve') %}
       <a href="/time-entries" class="{% if request.url.path.startswith('/time-entries') %}active{% endif %}">Stunden</a>

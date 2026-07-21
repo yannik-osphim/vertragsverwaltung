@@ -294,6 +294,10 @@ class Invoice(SQLModel, table=True):
     period_end: str = Field(nullable=False)
     status: str = Field(default="draft", nullable=False)
     currency: str = Field(default="EUR", nullable=False)
+    subtotal_cents: int = Field(default=0, nullable=False)
+    discount_type: str = Field(default="none", nullable=False)
+    discount_value: str = Field(default="")
+    discount_cents: int = Field(default=0, nullable=False)
     total_cents: int = Field(default=0, nullable=False)
     vat_treatment: str = Field(default="standard", nullable=False)
     vat_rate_percent: str = Field(default="19", nullable=False)
@@ -323,6 +327,10 @@ class InvoiceLineItem(SQLModel, table=True):
     billing_key: str = Field(default="")
     description: str = Field(nullable=False)
     quantity_text: str = Field(default="")
+    subtotal_cents: int = Field(default=0, nullable=False)
+    discount_type: str = Field(default="none", nullable=False)
+    discount_value: str = Field(default="")
+    discount_cents: int = Field(default=0, nullable=False)
     amount_cents: int = Field(nullable=False)
 
 
@@ -617,17 +625,45 @@ def init_db() -> None:
             connection.execute(statement)
 
 
-def column_names(_: Connection, table: str) -> set[str]:
+def validate_identifier(value: str) -> str:
+    if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", value):
+        raise ValueError(f"Invalid SQL identifier: {value}")
+    return value
+
+
+def column_names(connection: Connection, table: str) -> set[str]:
+    validate_identifier(table)
+    if IS_POSTGRES:
+        rows = connection.execute(
+            """
+            SELECT column_name AS name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = ?
+            """,
+            (table,),
+        ).fetchall()
+        return {row["name"] for row in rows}
+    if IS_SQLITE:
+        rows = connection.execute(
+            "SELECT name FROM pragma_table_info(?)",
+            (table,),
+        ).fetchall()
+        return {row["name"] for row in rows}
     return {column["name"] for column in inspect(engine).get_columns(table)}
 
 
 def add_column_if_missing(connection: Connection, table: str, column: str, definition: str) -> None:
+    validate_identifier(table)
+    validate_identifier(column)
     if column not in column_names(connection, table):
         connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def drop_not_null_if_postgres(connection: Connection, table: str, column: str) -> None:
     if IS_POSTGRES:
+        validate_identifier(table)
+        validate_identifier(column)
         connection.execute(f"ALTER TABLE {table} ALTER COLUMN {column} DROP NOT NULL")
 
 
@@ -676,6 +712,10 @@ def migrate_schema(connection: Connection) -> None:
     add_column_if_missing(connection, "invoices", "include_flat_fees", "INTEGER NOT NULL DEFAULT 1")
     add_column_if_missing(connection, "invoices", "datev_invoice_number", "TEXT DEFAULT ''")
     add_column_if_missing(connection, "invoices", "datev_invoice_date", "TEXT")
+    add_column_if_missing(connection, "invoices", "subtotal_cents", "INTEGER NOT NULL DEFAULT 0")
+    add_column_if_missing(connection, "invoices", "discount_type", "TEXT NOT NULL DEFAULT 'none'")
+    add_column_if_missing(connection, "invoices", "discount_value", "TEXT DEFAULT ''")
+    add_column_if_missing(connection, "invoices", "discount_cents", "INTEGER NOT NULL DEFAULT 0")
     add_column_if_missing(connection, "invoices", "vat_treatment", "TEXT NOT NULL DEFAULT 'standard'")
     add_column_if_missing(connection, "invoices", "vat_rate_percent", "TEXT NOT NULL DEFAULT '19'")
     add_column_if_missing(connection, "invoices", "vat_cents", "INTEGER NOT NULL DEFAULT 0")
@@ -686,6 +726,10 @@ def migrate_schema(connection: Connection) -> None:
     add_column_if_missing(connection, "variable_costs", "billing_frequency", "TEXT")
     add_column_if_missing(connection, "invoice_line_items", "datev_account", "TEXT DEFAULT ''")
     add_column_if_missing(connection, "invoice_line_items", "billing_key", "TEXT DEFAULT ''")
+    add_column_if_missing(connection, "invoice_line_items", "subtotal_cents", "INTEGER NOT NULL DEFAULT 0")
+    add_column_if_missing(connection, "invoice_line_items", "discount_type", "TEXT NOT NULL DEFAULT 'none'")
+    add_column_if_missing(connection, "invoice_line_items", "discount_value", "TEXT DEFAULT ''")
+    add_column_if_missing(connection, "invoice_line_items", "discount_cents", "INTEGER NOT NULL DEFAULT 0")
     add_column_if_missing(
         connection,
         "characteristic_definitions",
@@ -704,6 +748,34 @@ def migrate_schema(connection: Connection) -> None:
         UPDATE service_time_entries
         SET end_date = work_date
         WHERE end_date IS NULL OR end_date = ''
+        """
+    )
+    connection.execute(
+        """
+        UPDATE invoices
+        SET subtotal_cents = total_cents + COALESCE(discount_cents, 0)
+        WHERE subtotal_cents IS NULL OR subtotal_cents = 0
+        """
+    )
+    connection.execute(
+        """
+        UPDATE invoices
+        SET discount_type = 'none'
+        WHERE discount_type IS NULL OR discount_type = ''
+        """
+    )
+    connection.execute(
+        """
+        UPDATE invoice_line_items
+        SET subtotal_cents = amount_cents + COALESCE(discount_cents, 0)
+        WHERE subtotal_cents IS NULL OR subtotal_cents = 0
+        """
+    )
+    connection.execute(
+        """
+        UPDATE invoice_line_items
+        SET discount_type = 'none'
+        WHERE discount_type IS NULL OR discount_type = ''
         """
     )
     connection.execute(

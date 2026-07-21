@@ -122,7 +122,7 @@
             {% if role.name == 'admin' %}
             Voller Zugriff auf alle Seiten, alle Verwaltungsfunktionen und alle CRUD-Aktionen.
             {% elif role.name == 'manager' %}
-            Zugriff auf Entitaeten, Vertraege, Stunden und Rechnungen; kein Zugriff auf Analytics oder Verwaltung.
+            Zugriff auf Stammdaten, Vertraege, Stunden und Rechnungen; kein Zugriff auf Analytics oder Verwaltung.
             {% elif role.name == 'consultant' %}
             Nur Erfassung eigener Dienstleistungsstunden fuer Unternehmen und Vertraege.
             {% endif %}

@@ -388,6 +388,34 @@
     });
   }
 
+  function renderDiscounts() {
+    var target = canvas("discounts");
+    if (!target) {
+      return;
+    }
+    var discounts = data.discounts || {};
+    var options = baseOptions();
+    options.scales.y = currencyScale("left");
+    options.plugins.tooltip.callbacks = {
+      label: function (context) {
+        return context.dataset.label + ": " + money(context.parsed.y, true);
+      },
+    };
+    new Chart(target, {
+      type: "line",
+      data: {
+        labels: data.labels || [],
+        datasets: [
+          Object.assign(lineDataset("Rabatte", discounts.values || [], colors.warm, "y"), {
+            fill: true,
+            backgroundColor: "rgba(240, 68, 103, 0.12)",
+          }),
+        ],
+      },
+      options: options,
+    });
+  }
+
   function renderBookedHours() {
     var target = canvas("booked-hours");
     if (!target) {
@@ -424,5 +452,6 @@
   renderActiveLicenses();
   renderLicenseTypes();
   renderInvoiceActivity();
+  renderDiscounts();
   renderBookedHours();
 })();
