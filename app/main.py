@@ -308,6 +308,13 @@ def parse_optional_positive_decimal(value: str | None, default: Decimal | None =
     return amount
 
 
+def parse_license_quantity(value: str | None) -> Decimal:
+    quantity = parse_optional_positive_decimal(value, Decimal("1"))
+    if quantity is None:
+        quantity = Decimal("1")
+    return quantity
+
+
 def parse_percent(value: str | None, default: Decimal = Decimal("0")) -> Decimal:
     amount = parse_optional_decimal(value)
     if amount is None:
@@ -427,6 +434,12 @@ def hours_de(value: float | Decimal | None) -> str:
     return str(amount).replace(".", ",")
 
 
+def quantity_de(value: float | Decimal | None) -> str:
+    amount = Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    text = f"{amount:.2f}".rstrip("0").rstrip(".")
+    return text.replace(".", ",")
+
+
 def ensure_default_settings() -> None:
     timestamp = now_iso()
     with database.connect() as connection:
@@ -510,6 +523,16 @@ def work_amount_input(hours: float | Decimal | None) -> str:
 
 def parse_work_amount_to_hours(value: str) -> Decimal:
     amount = parse_hours(value)
+    settings = app_settings()
+    if settings["billing_rate_unit"] == "day":
+        return (amount * settings["workday_hours"]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return amount
+
+
+def parse_optional_work_amount_to_hours(value: str | None) -> Decimal | None:
+    amount = parse_optional_decimal(value)
+    if amount is None:
+        return None
     settings = app_settings()
     if settings["billing_rate_unit"] == "day":
         return (amount * settings["workday_hours"]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -1479,6 +1502,7 @@ templates.env.filters["money"] = money
 templates.env.filters["date_de"] = date_de
 templates.env.filters["datetime_de"] = datetime_de
 templates.env.filters["hours_de"] = hours_de
+templates.env.filters["quantity_de"] = quantity_de
 templates.env.filters["amount_input"] = amount_input
 templates.env.filters["rate_money"] = rate_money
 templates.env.filters["rate_input"] = rate_input
@@ -2261,10 +2285,10 @@ def bookable_work_item_options(
         item.update({"key": f"service:{item['id']}", "kind": "service", "label": "Dienstleistung"})
         items.append(item)
 
-    status_filter = "flat_fees.status = 'active'"
+    status_filter = "flat_fees.status = 'active' AND flat_fees.fee_kind != 'travel_cost'"
     params: tuple[Any, ...] = ()
     if include_flat_fee_id is not None:
-        status_filter = "(flat_fees.status = 'active' OR flat_fees.id = ?)"
+        status_filter = "(flat_fees.status = 'active' OR flat_fees.id = ?) AND flat_fees.fee_kind != 'travel_cost'"
         params = (include_flat_fee_id,)
     with database.connect() as connection:
         rows = connection.execute(
@@ -2448,6 +2472,7 @@ def fetch_contract_bundle(contract_id: int) -> dict[str, Any]:
         ).fetchone()
         if contract is None:
             raise HTTPException(status_code=404, detail="Vertrag nicht gefunden.")
+        contract_values = dict(contract)
 
         licenses = connection.execute(
             """
@@ -2467,7 +2492,7 @@ def fetch_contract_bundle(contract_id: int) -> dict[str, Any]:
         )
         for item in license_items:
             item["characteristics"] = license_characteristics.get(item["id"], [])
-            item["annual_total_cents"] = (item["annual_amount_cents"] or 0) * (item["quantity"] or 0)
+            enrich_license_price_fields(item, contract_values)
             item["billing_summary"] = license_billing_strategy_summary(item)
 
         services = connection.execute(
@@ -2649,12 +2674,13 @@ def license_billing_lines(contract: dict[str, Any], period_start: date, period_e
             billing_key = f"license:{license_row['id']}:{once_key_suffix}"
             if billing_key in reserved_keys:
                 return
-            price_license_start = parse_iso_date(license_row["start_date"]) or contract_start
-            multiplier = license_price_multiplier(contract, price_license_start, segment_start)
+            current_annual_amount_cents = license_current_annual_amount_cents(
+                license_row,
+                contract,
+                segment_start,
+            )
             amount_cents = cents_from_decimal(
-                Decimal(license_row["annual_amount_cents"] or 0)
-                * Decimal(license_row["quantity"] or 0)
-                * multiplier
+                Decimal(current_annual_amount_cents) * Decimal(str(license_row["quantity"] or 0))
             )
             if amount_cents <= 0:
                 return
@@ -2671,7 +2697,7 @@ def license_billing_lines(contract: dict[str, Any], period_start: date, period_e
                         license_row["notes"],
                         f"{frequency['label']} ab {date_de(segment_start)}",
                     ),
-                    "quantity_text": f"{license_row['quantity']} Lizenz(en)",
+                    "quantity_text": f"{quantity_de(license_row['quantity'])} Lizenz(en)",
                     "amount_cents": amount_cents,
                     "period_start": segment_start,
                     "period_end": line_end,
@@ -2696,12 +2722,14 @@ def license_billing_lines(contract: dict[str, Any], period_start: date, period_e
                     if billing_key not in reserved_keys:
                         interval_days = Decimal((interval_end - interval_start).days + 1)
                         overlap_days = Decimal((overlap_end - overlap_start).days + 1)
-                        price_license_start = parse_iso_date(license_row["start_date"]) or contract_start
-                        multiplier = license_price_multiplier(contract, price_license_start, interval_start)
+                        current_annual_amount_cents = license_current_annual_amount_cents(
+                            license_row,
+                            contract,
+                            interval_start,
+                        )
                         period_amount = (
-                            Decimal(license_row["annual_amount_cents"])
-                            * Decimal(license_row["quantity"])
-                            * multiplier
+                            Decimal(current_annual_amount_cents)
+                            * Decimal(str(license_row["quantity"]))
                             / periods_per_year
                         )
                         amount_cents = cents_from_decimal(period_amount * overlap_days / interval_days)
@@ -2718,7 +2746,7 @@ def license_billing_lines(contract: dict[str, Any], period_start: date, period_e
                                         license_row["notes"],
                                         f"{frequency['label']} {date_de(overlap_start)} bis {date_de(overlap_end)}",
                                     ),
-                                    "quantity_text": f"{license_row['quantity']} Lizenz(en)",
+                                    "quantity_text": f"{quantity_de(license_row['quantity'])} Lizenz(en)",
                                     "amount_cents": amount_cents,
                                     "period_start": overlap_start,
                                     "period_end": overlap_end,
@@ -3300,24 +3328,77 @@ def next_invoice_number(connection) -> str:
     return f"ABR-{current_year}-{count + 1:04d}"
 
 
-def license_price_multiplier(contract: dict[str, Any], license_start: date, interval_start: date) -> Decimal:
+def completed_license_years(license_start: date, effective_date: date) -> int:
+    if effective_date < license_start:
+        return 0
+
+    completed_years = 0
+    next_year_start = add_months(license_start, 12)
+    while effective_date >= next_year_start:
+        completed_years += 1
+        next_year_start = add_months(license_start, 12 * (completed_years + 1))
+    return completed_years
+
+
+def license_runtime_label(completed_years: int) -> str:
+    if completed_years == 1:
+        return "1 abgeschlossenes Lizenzjahr"
+    return f"{completed_years} abgeschlossene Lizenzjahre"
+
+
+def license_price_multiplier(contract: dict[str, Any], license_start: date, effective_date: date) -> Decimal:
     increase_percent = parse_percent(
         str(contract.get("license_price_increase_percent") or "8"),
         Decimal("8"),
     )
-    if increase_percent == 0 or interval_start < license_start:
+    if increase_percent == 0:
         return Decimal("1")
 
-    completed_license_years = 0
-    next_year_start = add_months(license_start, 12)
-    while interval_start >= next_year_start:
-        completed_license_years += 1
-        next_year_start = add_months(license_start, 12 * (completed_license_years + 1))
-
-    if completed_license_years == 0:
+    completed_years = completed_license_years(license_start, effective_date)
+    if completed_years == 0:
         return Decimal("1")
     annual_factor = Decimal("1") + (increase_percent / Decimal("100"))
-    return annual_factor ** completed_license_years
+    return annual_factor ** completed_years
+
+
+def license_current_annual_amount_cents(
+    license_row: dict[str, Any],
+    contract: dict[str, Any],
+    effective_date: date,
+) -> int:
+    license_start = parse_iso_date(license_row["start_date"]) or effective_date
+    multiplier = license_price_multiplier(contract, license_start, effective_date)
+    return cents_from_decimal(Decimal(license_row["annual_amount_cents"] or 0) * multiplier)
+
+
+def enrich_license_price_fields(
+    item: dict[str, Any],
+    contract: dict[str, Any],
+    as_of: date | None = None,
+) -> None:
+    effective_date = as_of or date.today()
+    license_start = parse_iso_date(item.get("start_date")) or effective_date
+    license_end = parse_iso_date(item.get("end_date"))
+    if license_end and effective_date > license_end:
+        effective_date = license_end
+
+    completed_years = completed_license_years(license_start, effective_date)
+    quantity = Decimal(str(item.get("quantity") or 0))
+    initial_amount_cents = int(item.get("annual_amount_cents") or 0)
+    current_amount_cents = license_current_annual_amount_cents(item, contract, effective_date)
+    increase_percent = parse_percent(
+        str(contract.get("license_price_increase_percent") or "8"),
+        Decimal("8"),
+    )
+
+    item["initial_annual_amount_cents"] = initial_amount_cents
+    item["current_annual_amount_cents"] = current_amount_cents
+    item["initial_annual_total_cents"] = cents_from_decimal(Decimal(initial_amount_cents) * quantity)
+    item["current_annual_total_cents"] = cents_from_decimal(Decimal(current_amount_cents) * quantity)
+    item["annual_total_cents"] = item["current_annual_total_cents"]
+    item["completed_license_years"] = completed_years
+    item["license_runtime_label"] = license_runtime_label(completed_years)
+    item["price_increase_label"] = hours_de(increase_percent)
 
 
 def invoice_vat_amounts(contract: dict[str, Any], net_total_cents: int) -> dict[str, Any]:
@@ -3490,8 +3571,22 @@ def create_billing_invoice(
             )
             for entry_id in line.get("time_entry_ids", []):
                 connection.execute(
-                    "INSERT OR IGNORE INTO invoice_time_entries (invoice_id, time_entry_id) VALUES (?, ?)",
+                    """
+                    INSERT INTO invoice_time_entries (invoice_id, time_entry_id)
+                    VALUES (?, ?)
+                    ON CONFLICT DO NOTHING
+                    """,
                     (invoice_id, entry_id),
+                )
+                connection.execute(
+                    """
+                    UPDATE service_time_entries
+                    SET invoice_id = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                      AND invoice_id IS NULL
+                    """,
+                    (invoice_id, timestamp, entry_id),
                 )
     return invoice_id
 
@@ -3880,6 +3975,7 @@ def analytics_data(year: int) -> dict[str, Any]:
             """
         ).fetchall()
 
+    active_license_arr = cents_from_decimal(Decimal(str(active_license_arr or 0)))
     monthly = [
         {
             "month": month,
@@ -3995,12 +4091,14 @@ def analytics_data(year: int) -> dict[str, Any]:
                 continue
             if license_end and license_end < month_start:
                 continue
-            quantity = int(row["quantity"] or 0)
+            quantity = Decimal(str(row["quantity"] or 0))
             type_name = row["type_name"] or "Ohne Katalogart"
             license_instance_count_by_month[month - 1] += 1
-            license_count_by_month[month - 1] += quantity
-            license_type_series[type_name][month - 1] += quantity
-            license_arr_by_month[month - 1] += int(row["annual_amount_cents"] or 0) * quantity
+            license_count_by_month[month - 1] += float(quantity)
+            license_type_series[type_name][month - 1] += float(quantity)
+            license_arr_by_month[month - 1] += cents_from_decimal(
+                Decimal(row["annual_amount_cents"] or 0) * quantity
+            )
     license_mrr_by_month = [round(amount / 12) for amount in license_arr_by_month]
     avg_license_revenue_by_month = [
         round(monthly[index]["license_cents"] / license_count_by_month[index])
@@ -4068,10 +4166,14 @@ def analytics_data(year: int) -> dict[str, Any]:
         item["draft_percent"] = percent(item["draft_cents"] or 0, max_company)
         top_companies.append(item)
 
-    max_license = max([row["arr_cents"] or 0 for row in license_rows] + [1])
+    max_license = max(
+        [cents_from_decimal(Decimal(str(row["arr_cents"] or 0))) for row in license_rows]
+        + [1]
+    )
     license_by_type = []
     for row in license_rows:
         item = dict(row)
+        item["arr_cents"] = cents_from_decimal(Decimal(str(item["arr_cents"] or 0)))
         item["percent"] = percent(item["arr_cents"] or 0, max_license)
         license_by_type.append(item)
 
@@ -4587,7 +4689,8 @@ def company_detail(
             """
             SELECT licenses.*, license_types.datev_account,
                    contracts.id AS contract_id, contracts.contract_number,
-                   contracts.title AS contract_title, contracts.currency
+                   contracts.title AS contract_title, contracts.currency,
+                   contracts.license_price_increase_percent
             FROM licenses
             JOIN contracts ON contracts.id = licenses.contract_id
             JOIN license_types ON license_types.id = licenses.license_type_id
@@ -4718,7 +4821,7 @@ def company_detail(
     license_quantity = sum(item["quantity"] or 0 for item in active_license_items)
     active_license_arr = 0
     for item in active_license_items:
-        item["annual_total_cents"] = (item["annual_amount_cents"] or 0) * (item["quantity"] or 0)
+        enrich_license_price_fields(item, item)
         item["billing_summary"] = license_billing_strategy_summary(item)
         active_license_arr += item["annual_total_cents"]
 
@@ -4817,7 +4920,7 @@ def licenses_index(request: Request, _: dict[str, Any] = Depends(require_permiss
             """
             SELECT licenses.*, license_types.datev_account,
                    contracts.id AS contract_id, contracts.contract_number, contracts.title AS contract_title,
-                   contracts.currency,
+                   contracts.currency, contracts.license_price_increase_percent,
                    companies.id AS company_id, companies.name AS company_name,
                    companies.logo_stored_filename AS company_logo_stored_filename
             FROM licenses
@@ -4829,7 +4932,7 @@ def licenses_index(request: Request, _: dict[str, Any] = Depends(require_permiss
         ).fetchall()
     license_items = [dict(row) for row in licenses]
     for item in license_items:
-        item["annual_total_cents"] = (item["annual_amount_cents"] or 0) * (item["quantity"] or 0)
+        enrich_license_price_fields(item, item)
         item["billing_summary"] = license_billing_strategy_summary(item)
     return render(request, "licenses.html", {"licenses": license_items})
 
@@ -4942,7 +5045,7 @@ def create_global_license(
     contract_id: int = Form(...),
     license_type_id: int = Form(...),
     annual_amount: str = Form(...),
-    quantity: int = Form(1),
+    quantity: str = Form("1"),
     start_date: str = Form(...),
     end_date: str = Form(""),
     billing_frequency: str = Form(""),
@@ -4993,6 +5096,7 @@ def new_global_service_form(
                 "contract_id": contract["id"],
                 "currency": contract["currency"],
                 "service_type_id": None,
+                "name": "",
                 "hourly_rate_cents": contract["service_hourly_rate_cents"],
                 "contracted_hours": None,
                 "billing_frequency": contract["service_billing_frequency"],
@@ -5010,6 +5114,7 @@ def new_global_service_form(
 def create_global_service(
     contract_id: int = Form(...),
     service_type_id: int = Form(...),
+    name: str = Form(""),
     hourly_rate: str = Form(...),
     contracted_hours: str = Form(""),
     billing_frequency: str = Form(""),
@@ -5019,6 +5124,7 @@ def create_global_service(
     create_service(
         contract_id,
         service_type_id,
+        name,
         hourly_rate,
         contracted_hours,
         billing_frequency,
@@ -5636,6 +5742,7 @@ def new_service_form(
                 "contract_id": contract_id,
                 "currency": contract["currency"],
                 "service_type_id": None,
+                "name": "",
                 "hourly_rate_cents": contract["service_hourly_rate_cents"],
                 "contracted_hours": None,
                 "billing_frequency": contract["service_billing_frequency"],
@@ -5888,7 +5995,7 @@ def create_license(
     contract_id: int,
     license_type_id: int = Form(...),
     annual_amount: str = Form(...),
-    quantity: int = Form(1),
+    quantity: str = Form("1"),
     start_date: str = Form(...),
     end_date: str = Form(""),
     billing_frequency: str = Form(""),
@@ -5900,6 +6007,7 @@ def create_license(
 ):
     try:
         annual_amount_cents = parse_amount_to_cents(annual_amount)
+        parsed_quantity = parse_license_quantity(quantity)
         parsed_start = parse_iso_date(start_date)
         if parsed_start is None:
             raise ValueError("Startdatum fehlt.")
@@ -5951,7 +6059,7 @@ def create_license(
                 license_type_id,
                 license_type["name"],
                 annual_amount_cents,
-                max(quantity, 1),
+                float(parsed_quantity),
                 parsed_start.isoformat(),
                 parsed_end.isoformat() if parsed_end else None,
                 item_billing_frequency,
@@ -5973,7 +6081,7 @@ def update_license(
     license_id: int,
     license_type_id: int = Form(...),
     annual_amount: str = Form(...),
-    quantity: int = Form(1),
+    quantity: str = Form("1"),
     start_date: str = Form(...),
     end_date: str = Form(""),
     billing_frequency: str = Form(...),
@@ -5986,6 +6094,7 @@ def update_license(
 ):
     try:
         annual_amount_cents = parse_amount_to_cents(annual_amount)
+        parsed_quantity = parse_license_quantity(quantity)
         parsed_start = parse_iso_date(start_date)
         if parsed_start is None:
             raise ValueError("Startdatum fehlt.")
@@ -6044,7 +6153,7 @@ def update_license(
                 license_type_id,
                 license_type["name"],
                 annual_amount_cents,
-                max(quantity, 1),
+                float(parsed_quantity),
                 parsed_start.isoformat(),
                 parsed_end.isoformat() if parsed_end else None,
                 item_billing_frequency,
@@ -6101,6 +6210,7 @@ def delete_license(
 def create_service(
     contract_id: int,
     service_type_id: int = Form(...),
+    name: str = Form(""),
     hourly_rate: str = Form(...),
     contracted_hours: str = Form(""),
     billing_frequency: str = Form(""),
@@ -6109,7 +6219,7 @@ def create_service(
 ):
     try:
         hourly_rate_cents = parse_rate_to_hourly_cents(hourly_rate)
-        parsed_contracted_hours = parse_optional_decimal(contracted_hours)
+        parsed_contracted_hours = parse_optional_work_amount_to_hours(contracted_hours)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     timestamp = now_iso()
@@ -6133,6 +6243,7 @@ def create_service(
         ).fetchone()
         if service_type is None:
             raise HTTPException(status_code=400, detail="Dienstleistungsart ist nicht im aktiven Katalog vorhanden.")
+        display_name = (name or "").strip() or service_type["name"]
         cursor = connection.execute(
             """
             INSERT INTO services (
@@ -6144,7 +6255,7 @@ def create_service(
             (
                 contract_id,
                 service_type_id,
-                service_type["name"],
+                display_name,
                 hourly_rate_cents,
                 float(parsed_contracted_hours) if parsed_contracted_hours is not None else None,
                 item_billing_frequency,
@@ -6162,6 +6273,7 @@ def update_service(
     contract_id: int,
     service_id: int,
     service_type_id: int = Form(...),
+    name: str = Form(""),
     hourly_rate: str = Form(...),
     contracted_hours: str = Form(""),
     billing_frequency: str = Form(...),
@@ -6171,7 +6283,7 @@ def update_service(
 ):
     try:
         hourly_rate_cents = parse_rate_to_hourly_cents(hourly_rate)
-        parsed_contracted_hours = parse_optional_decimal(contracted_hours)
+        parsed_contracted_hours = parse_optional_work_amount_to_hours(contracted_hours)
         item_billing_frequency = validate_billing_frequency(billing_frequency)
         item_status = validate_contract_item_status(status_value)
     except ValueError as exc:
@@ -6191,6 +6303,7 @@ def update_service(
         ).fetchone()
         if service_type is None or (not service_type["active"] and service_type_id != existing["service_type_id"]):
             raise HTTPException(status_code=400, detail="Dienstleistungsart ist nicht im aktiven Katalog vorhanden.")
+        display_name = (name or "").strip() or service_type["name"]
         connection.execute(
             """
             UPDATE services
@@ -6206,7 +6319,7 @@ def update_service(
             """,
             (
                 service_type_id,
-                service_type["name"],
+                display_name,
                 hourly_rate_cents,
                 float(parsed_contracted_hours) if parsed_contracted_hours is not None else None,
                 item_billing_frequency,
@@ -6877,11 +6990,16 @@ def create_time_entry(
             service_id = work_item_id
         else:
             flat_fee = connection.execute(
-                "SELECT id FROM flat_fees WHERE id = ? AND contract_id = ?",
+                "SELECT id, fee_kind FROM flat_fees WHERE id = ? AND contract_id = ?",
                 (work_item_id, contract_id),
             ).fetchone()
             if flat_fee is None:
                 raise HTTPException(status_code=400, detail="Pauschale passt nicht zum Vertrag.")
+            if flat_fee["fee_kind"] == "travel_cost":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Reisekostenpauschalen koennen nicht manuell als Aufwand gebucht werden.",
+                )
             flat_fee_id = work_item_id
         connection.execute(
             """
@@ -6981,11 +7099,13 @@ def update_time_entry(
                 flat_fee_id = None
             else:
                 flat_fee = connection.execute(
-                    "SELECT id FROM flat_fees WHERE id = ? AND contract_id = ?",
+                    "SELECT id, fee_kind FROM flat_fees WHERE id = ? AND contract_id = ?",
                     (work_item_id, contract_id),
                 ).fetchone()
                 if flat_fee is None:
                     raise ValueError("Pauschale passt nicht zum Vertrag.")
+                if flat_fee["fee_kind"] == "travel_cost":
+                    raise ValueError("Reisekostenpauschalen koennen nicht manuell als Aufwand gebucht werden.")
                 service_id = None
                 flat_fee_id = work_item_id
     except ValueError as exc:

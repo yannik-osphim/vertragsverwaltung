@@ -39,7 +39,7 @@
   <article class="metric success">
     <span>Aktive Lizenzen</span>
     <strong>{{ company_metrics.active_license_count }}</strong>
-    <small>{{ company_metrics.active_license_quantity }} Lizenzmenge</small>
+    <small>{{ company_metrics.active_license_quantity | quantity_de }} Lizenzmenge</small>
   </article>
   <article class="metric">
     <span>Aktiver Lizenz-ARR</span>
@@ -110,7 +110,7 @@
     <dl class="detail-grid">
       <div><dt>Vertraege</dt><dd>{{ contracts | length }}</dd></div>
       <div><dt>Aktive Lizenzen</dt><dd>{{ company_metrics.active_license_count }}</dd></div>
-      <div><dt>Lizenzmenge</dt><dd>{{ company_metrics.active_license_quantity }}</dd></div>
+      <div><dt>Lizenzmenge</dt><dd>{{ company_metrics.active_license_quantity | quantity_de }}</dd></div>
       <div><dt>Lizenz-ARR</dt><dd>{{ company_metrics.active_license_arr_cents | money }}</dd></div>
       {% if contracts %}
       <div class="span-2"><dt>Aktuellster Vertrag</dt><dd><a href="/contracts/{{ contracts[0].id }}">{{ contracts[0].contract_number }}</a><br><span class="muted">{{ contracts[0].title }}</span></dd></div>
@@ -182,8 +182,11 @@
           <th>Lizenz</th>
           <th>Vertrag</th>
           <th>DATEV</th>
+          <th>Initiale Einzelkosten</th>
+          <th>Aktuelle Einzelkosten</th>
           <th>Menge</th>
-          <th>Jahreswert</th>
+          <th>Laufzeit</th>
+          <th>Aktueller Jahreswert</th>
           <th>Abrechnung</th>
           <th>Zeitraum</th>
         </tr>
@@ -194,13 +197,19 @@
           <td>{{ license.name }}</td>
           <td><a href="/contracts/{{ license.contract_id }}">{{ license.contract_number }}</a><br><span class="muted">{{ license.contract_title }}</span></td>
           <td>{{ license.datev_account or "-" }}</td>
-          <td>{{ license.quantity }}</td>
-          <td>{{ license.annual_total_cents | money(license.currency) }}</td>
+          <td>{{ license.initial_annual_amount_cents | money(license.currency) }}</td>
+          <td>
+            {{ license.current_annual_amount_cents | money(license.currency) }}
+            <br><span class="muted">{{ license.price_increase_label }} % p.a.</span>
+          </td>
+          <td>{{ license.quantity | quantity_de }}</td>
+          <td>{{ license.license_runtime_label }}</td>
+          <td>{{ license.current_annual_total_cents | money(license.currency) }}</td>
           <td>{{ license.billing_summary }}</td>
           <td>{{ license.start_date | date_de }} - {{ license.end_date | date_de }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="empty">Keine aktiven Lizenzen vorhanden.</td></tr>
+        <tr><td colspan="10" class="empty">Keine aktiven Lizenzen vorhanden.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -24,17 +24,21 @@
     <span>Dienstleistungsart</span>
     <select name="service_type_id" required>
       {% for service_type in service_types %}
-      <option value="{{ service_type.id }}" {% if service.service_type_id == service_type.id %}selected{% endif %}>{{ service_type.name }} - DATEV {{ service_type.datev_account }}{% if not service_type.active %} (inaktiv){% endif %}</option>
+      <option value="{{ service_type.id }}" data-default-name="{{ service_type.name }}" {% if service.service_type_id == service_type.id %}selected{% endif %}>{{ service_type.name }} - DATEV {{ service_type.datev_account }}{% if not service_type.active %} (inaktiv){% endif %}</option>
       {% endfor %}
     </select>
+  </label>
+  <label class="span-2">
+    <span>Anzeigename fuer Stundenbuchung</span>
+    <input name="name" data-service-name-input value="{{ service.name or '' }}" placeholder="z.B. Onboarding Workshop Werk 2" required>
   </label>
   <label>
     <span>{{ rate_unit_label }}</span>
     <input name="hourly_rate" inputmode="decimal" value="{{ service.hourly_rate_cents | rate_input }}" required>
   </label>
   <label>
-    <span>Max. Stunden</span>
-    <input name="contracted_hours" inputmode="decimal" value="{% if service.contracted_hours is not none %}{{ service.contracted_hours | hours_de }}{% endif %}">
+    <span>Max. Umfang ({{ work_unit_label }})</span>
+    <input name="contracted_hours" inputmode="decimal" value="{% if service.contracted_hours is not none %}{{ service.contracted_hours | work_amount_input }}{% endif %}">
   </label>
   <label>
     <span>Abrechnung</span>
@@ -63,4 +67,27 @@
     <button class="button primary" type="submit">{{ submit_label or "Speichern" }}</button>
   </div>
 </form>
+<script>
+  (function () {
+    var typeSelect = document.querySelector('select[name="service_type_id"]');
+    var nameInput = document.querySelector('[data-service-name-input]');
+    if (!typeSelect || !nameInput) {
+      return;
+    }
+    var lastDefault = "";
+    function selectedDefaultName() {
+      var selected = typeSelect.options[typeSelect.selectedIndex];
+      return selected ? selected.dataset.defaultName || "" : "";
+    }
+    function syncName() {
+      var nextDefault = selectedDefaultName();
+      if (!nameInput.value.trim() || nameInput.value.trim() === lastDefault) {
+        nameInput.value = nextDefault;
+      }
+      lastDefault = nextDefault;
+    }
+    syncName();
+    typeSelect.addEventListener("change", syncName);
+  })();
+</script>
 {% endblock %}
