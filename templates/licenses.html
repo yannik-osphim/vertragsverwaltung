@@ -24,9 +24,11 @@
         <th>Vertrag</th>
         <th>Beschreibung</th>
         <th>DATEV</th>
-        <th>Einzelkosten</th>
+        <th>Initiale Einzelkosten</th>
+        <th>Aktuelle Einzelkosten</th>
         <th>Menge</th>
-        <th>Jahreswert</th>
+        <th>Laufzeit</th>
+        <th>Aktueller Jahreswert</th>
         <th>Abrechnung</th>
         <th>Start</th>
         <th>Ende</th>
@@ -51,9 +53,14 @@
         <td><a href="/contracts/{{ license.contract_id }}">{{ license.contract_number }}</a><br><span class="muted">{{ license.contract_title }}</span></td>
         <td><div class="rich-text-content compact">{{ license.notes | rich_text }}</div></td>
         <td>{{ license.datev_account or "-" }}</td>
-        <td>{{ license.annual_amount_cents | money(license.currency) }}</td>
-        <td>{{ license.quantity }}</td>
-        <td>{{ license.annual_total_cents | money(license.currency) }}</td>
+        <td>{{ license.initial_annual_amount_cents | money(license.currency) }}</td>
+        <td>
+          {{ license.current_annual_amount_cents | money(license.currency) }}
+          <br><span class="muted">{{ license.price_increase_label }} % p.a.</span>
+        </td>
+        <td>{{ license.quantity | quantity_de }}</td>
+        <td>{{ license.license_runtime_label }}</td>
+        <td>{{ license.current_annual_total_cents | money(license.currency) }}</td>
         <td>{{ license.billing_summary }}</td>
         <td>{{ license.start_date | date_de }}</td>
         <td>{{ license.end_date | date_de }}</td>
@@ -73,7 +80,7 @@
         {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="{% if is_superadmin %}13{% else %}12{% endif %}" class="empty">Keine Lizenzen vorhanden.</td></tr>
+      <tr><td colspan="{% if is_superadmin %}15{% else %}14{% endif %}" class="empty">Keine Lizenzen vorhanden.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -191,7 +191,7 @@ class License(SQLModel, table=True):
     license_type_id: int | None = Field(default=None)
     name: str = Field(nullable=False)
     annual_amount_cents: int = Field(nullable=False)
-    quantity: int = Field(default=1, nullable=False)
+    quantity: float = Field(default=1, nullable=False)
     start_date: str = Field(nullable=False)
     end_date: str | None = Field(default=None)
     billing_frequency: str = Field(default="quarterly", nullable=False)
@@ -667,6 +667,48 @@ def drop_not_null_if_postgres(connection: Connection, table: str, column: str) -
         connection.execute(f"ALTER TABLE {table} ALTER COLUMN {column} DROP NOT NULL")
 
 
+def column_data_type(connection: Connection, table: str, column: str) -> str | None:
+    validate_identifier(table)
+    validate_identifier(column)
+    if IS_POSTGRES:
+        row = connection.execute(
+            """
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = ?
+              AND column_name = ?
+            """,
+            (table, column),
+        ).fetchone()
+        return row["data_type"] if row else None
+    if IS_SQLITE:
+        rows = connection.execute("SELECT name, type FROM pragma_table_info(?)", (table,)).fetchall()
+        for row in rows:
+            if row["name"] == column:
+                return row["type"]
+        return None
+    for inspected_column in inspect(engine).get_columns(table):
+        if inspected_column["name"] == column:
+            return str(inspected_column["type"])
+    return None
+
+
+def migrate_license_quantity_to_decimal(connection: Connection) -> None:
+    if IS_POSTGRES and column_data_type(connection, "licenses", "quantity") not in {
+        "double precision",
+        "numeric",
+        "real",
+    }:
+        connection.execute(
+            """
+            ALTER TABLE licenses
+            ALTER COLUMN quantity TYPE DOUBLE PRECISION
+            USING quantity::double precision
+            """
+        )
+
+
 def migrate_schema(connection: Connection) -> None:
     add_column_if_missing(connection, "companies", "contact_name", "TEXT NOT NULL DEFAULT ''")
     add_column_if_missing(connection, "companies", "contact_email", "TEXT NOT NULL DEFAULT ''")
@@ -682,6 +724,7 @@ def migrate_schema(connection: Connection) -> None:
     add_column_if_missing(connection, "licenses", "billing_strategy", "TEXT NOT NULL DEFAULT 'standard'")
     add_column_if_missing(connection, "licenses", "first_year_billing_frequency", "TEXT")
     add_column_if_missing(connection, "licenses", "renewal_billing_frequency", "TEXT")
+    migrate_license_quantity_to_decimal(connection)
     add_column_if_missing(connection, "services", "service_type_id", "INTEGER")
     add_column_if_missing(connection, "services", "contracted_hours", "REAL")
     add_column_if_missing(connection, "services", "billing_frequency", "TEXT")

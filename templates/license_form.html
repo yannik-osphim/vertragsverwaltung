@@ -32,12 +32,12 @@
     </select>
   </label>
   <label>
-    <span>Einzelkosten p.a.</span>
+    <span>Initiale Einzelkosten p.a.</span>
     <input name="annual_amount" inputmode="decimal" value="{{ license.annual_amount_cents | amount_input }}" required>
   </label>
   <label>
     <span>Menge</span>
-    <input name="quantity" type="number" min="1" value="{{ license.quantity }}" required>
+    <input name="quantity" inputmode="decimal" value="{{ license.quantity | quantity_de }}" required>
   </label>
   <label>
     <span>Lizenzbeginn</span>
