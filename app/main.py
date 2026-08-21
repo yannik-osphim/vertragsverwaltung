@@ -3317,15 +3317,22 @@ def grouped_potential_success_bonuses(period_start: date, period_end: date) -> l
 
 def next_invoice_number(connection) -> str:
     current_year = date.today().year
-    count = connection.execute(
+    prefix = f"ABR-{current_year}-"
+    rows = connection.execute(
         """
-        SELECT COUNT(*)
+        SELECT invoice_number
         FROM invoices
         WHERE invoice_number LIKE ?
         """,
-        (f"ABR-{current_year}-%",),
-    ).fetchone()[0]
-    return f"ABR-{current_year}-{count + 1:04d}"
+        (f"{prefix}%",),
+    ).fetchall()
+    pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
+    max_sequence = 0
+    for row in rows:
+        match = pattern.fullmatch(str(row["invoice_number"] or ""))
+        if match:
+            max_sequence = max(max_sequence, int(match.group(1)))
+    return f"{prefix}{max_sequence + 1:04d}"
 
 
 def completed_license_years(license_start: date, effective_date: date) -> int:
