@@ -1,0 +1,84 @@
+.time-booking-heading {
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 2rem;
+}
+
+.time-booking-heading h1 { font-size: 2rem; }
+.booking-owner { text-align: right; overflow-wrap: anywhere; }
+.booking-owner span, .booking-total > span { display: block; color: var(--muted); font-size: 0.8rem; margin-bottom: 0.25rem; }
+.booking-owner strong { font-size: 0.95rem; font-weight: 600; }
+.booking-error { margin-bottom: 1.5rem; }
+
+.time-booking-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
+  grid-template-areas: "assignment reference" "timing reference" "activity reference" "footer footer";
+  column-gap: 3rem;
+  row-gap: 1.8rem;
+  align-items: start;
+}
+
+.booking-assignment { grid-area: assignment; }
+.booking-timing { grid-area: timing; }
+.booking-activity { grid-area: activity; }
+.booking-section { min-width: 0; display: grid; gap: 1rem; }
+.booking-section + .booking-section { border-top: 1px solid var(--line); padding-top: 1.6rem; }
+.booking-section h2 { font-size: 1rem; margin: 0 0 0.15rem; font-weight: 700; }
+.booking-section label { min-width: 0; }
+.booking-section input, .booking-section select { min-height: 3rem; }
+.booking-date-grid, .booking-amount-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: end; }
+.booking-amount-control { position: relative; }
+.booking-amount-control input { padding-right: 3rem; font-size: 1.1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.booking-amount-control > span { position: absolute; top: 50%; transform: translateY(-50%); right: 1rem; margin: 0; font-weight: 500; }
+.booking-conversion { min-height: 3rem; display: flex; flex-direction: column; justify-content: center; gap: 0.2rem; }
+.booking-conversion strong { font-size: 0.95rem; color: var(--teal); font-weight: 650; }
+.booking-conversion > span { font-size: 0.75rem; color: var(--muted); }
+.booking-status { max-width: 19rem; }
+.booking-activity { gap: 0.65rem; }
+.booking-activity textarea { min-height: 10rem; }
+.booking-activity .ql-container.ql-snow, .booking-activity .ql-editor { min-height: 10rem; }
+.booking-activity .ql-editor { padding: 1rem; }
+.booking-activity .ql-toolbar.ql-snow { padding: 0.65rem; }
+.booking-activity label .booking-optional { display: inline; color: var(--muted); font-size: 0.75rem; font-weight: 400; margin-left: 0.5rem; }
+
+.booking-reference { grid-area: reference; min-width: 0; padding-left: 1.75rem; border-left: 1px solid var(--line); position: sticky; top: 1.5rem; }
+.booking-reference h2 { font-size: 0.8rem; color: var(--muted); font-weight: 650; margin: 0 0 1.25rem; }
+.booking-kind { display: inline-block; background: var(--accent-soft); color: var(--teal); padding: 0.2rem 0.55rem; border-radius: 4px; font-size: 0.72rem; font-weight: 650; }
+.booking-reference h3 { font-size: 1.15rem; line-height: 1.5; margin: 0.75rem 0 0.35rem; overflow-wrap: anywhere; }
+.booking-reference-company { margin: 0 0 1.7rem; color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
+.booking-reference h4 { border-top: 1px solid var(--line); padding-top: 1.2rem; font-size: 0.8rem; margin: 0 0 0.75rem; color: var(--muted); font-weight: 650; }
+.booking-service-description { font-size: 0.94rem; line-height: 1.75; max-height: 28rem; overflow: auto; padding-right: 0.35rem; }
+.booking-reference .muted { font-size: 0.875rem; }
+.booking-empty { color: var(--amber); font-size: 0.875rem; margin: 0; }
+.booking-empty[hidden] { display: none; }
+
+.time-booking-form .select-display { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; min-height: 3rem; }
+.time-booking-form .select-option { overflow-wrap: anywhere; font-size: 0.9rem; }
+.time-booking-form .select-option-description { display: block; margin-top: 0.2rem; font-size: 0.78rem; font-weight: 400; color: var(--muted); line-height: 1.5; }
+.time-booking-form .select-options { max-height: 20rem; }
+.time-booking-form button:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+.booking-footer { grid-area: footer; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.3rem 0; border-top: 1px solid var(--line); }
+.booking-total strong { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.booking-footer-actions { display: flex; gap: 0.75rem; }
+.booking-footer .button { box-shadow: none; }
+
+@media (max-width: 900px) {
+  .time-booking-form { grid-template-columns: minmax(0, 1fr); grid-template-areas: "assignment" "reference" "timing" "activity" "footer"; row-gap: 1.5rem; }
+  .booking-reference { position: static; border-left: 2px solid var(--accent); padding-left: 1rem; }
+  .booking-reference h2 { margin-bottom: 0.75rem; }
+  .booking-reference-company { margin-bottom: 1rem; }
+  .booking-service-description { max-height: 18rem; }
+}
+
+@media (max-width: 540px) {
+  .time-booking-heading h1 { font-size: 1.6rem; }
+  .booking-owner { text-align: left; }
+  .booking-owner span { display: inline; margin-right: 0.4rem; }
+  .booking-owner strong { font-size: 0.85rem; }
+  .booking-date-grid, .booking-amount-grid { grid-template-columns: minmax(0, 1fr); gap: 0.8rem; }
+  .booking-conversion { min-height: 0; }
+  .booking-footer { align-items: stretch; flex-direction: column; }
+  .booking-footer-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr); }
+  .booking-footer .button { padding-left: 0.5rem; padding-right: 0.5rem; font-size: 0.85rem; white-space: normal; }
+}

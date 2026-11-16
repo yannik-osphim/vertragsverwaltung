@@ -19,7 +19,7 @@
     if (!cell) {
       return "";
     }
-    var controls = Array.prototype.slice.call(cell.querySelectorAll("input, select, textarea"));
+    var controls = Array.prototype.slice.call(cell.querySelectorAll("input:not([type='hidden']):not([type='checkbox']):not([type='radio']), select, textarea"));
     if (controls.length === 0) {
       return cell.textContent.trim();
     }
@@ -46,9 +46,24 @@
 
   function compareRows(index, direction) {
     return function (a, b) {
-      var left = cellText(a, index);
-      var right = cellText(b, index);
-      var result = left.localeCompare(right, "de", { numeric: true, sensitivity: "base" });
+      var leftCell = a.children[index];
+      var rightCell = b.children[index];
+      var left = leftCell && leftCell.dataset.sortValue !== undefined ? leftCell.dataset.sortValue : cellText(a, index);
+      var right = rightCell && rightCell.dataset.sortValue !== undefined ? rightCell.dataset.sortValue : cellText(b, index);
+      var leftDate = dateRange(left);
+      var rightDate = dateRange(right);
+      var leftNumber = parseNumericToken(left);
+      var rightNumber = parseNumericToken(right);
+      var result;
+      if (leftCell && leftCell.dataset.sortType === "number") {
+        result = Number(left) - Number(right);
+      } else if (leftDate && rightDate) {
+        result = leftDate.start.localeCompare(rightDate.start);
+      } else if (leftNumber && rightNumber && leftNumber.suffix === rightNumber.suffix) {
+        result = leftNumber.value - rightNumber.value;
+      } else {
+        result = left.localeCompare(right, "de", { numeric: true, sensitivity: "base" });
+      }
       return direction === "desc" ? -result : result;
     };
   }
@@ -100,9 +115,18 @@
     return normalize(text).replace(/\s+/g, " ");
   }
 
+  function dateRange(text) {
+    var value = (text || "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return { start: value, end: value };
+    var matches = value.match(/\b\d{2}\.\d{2}\.\d{4}\b/g);
+    if (!matches || !/^\d{2}\.\d{2}\.\d{4}/.test(value)) return null;
+    function iso(date) { return date.split(".").reverse().join("-"); }
+    return { start: iso(matches[0]), end: iso(matches[matches.length - 1]) };
+  }
+
   function shouldAggregateColumn(headerText) {
     var header = normalizeHeader(headerText);
-    return !/(nummer|datev|status|datum|start|ende|zeitraum|vertrag|unternehmen|name|rolle|benutzer|email)/.test(header);
+    return !/(nummer|datev|status|datum|start|ende|zeitraum|vertrag|unternehmen|name|rolle|benutzer|email|aktion|auswahl|freigabe)/.test(header);
   }
 
   function detectNumericColumns(table, rows) {
@@ -162,6 +186,8 @@
   }
 
   function initTable(table, tableIndex) {
+    var compact = Boolean(window.createCompactTableTools);
+    var compactControls = null;
     var tbody = table.tBodies[0];
     if (!tbody) {
       return;
@@ -173,7 +199,7 @@
     var rows = Array.prototype.slice.call(tbody.rows).filter(function (row) {
       return !row.querySelector(".empty");
     });
-    if (rows.length === 0) {
+    if (rows.length === 0 && !compact) {
       return;
     }
 
@@ -185,13 +211,15 @@
       return;
     }
 
+    var defaultSortIndex = table.dataset.defaultSort !== undefined ? Number(table.dataset.defaultSort) : -1;
+    var defaultSortDirection = table.dataset.defaultDirection || "asc";
     var state = {
       query: "",
-      columnQueries: [],
+      searchIndex: -1,
       page: 1,
       pageSize: 10,
-      sortIndex: -1,
-      sortDirection: "asc",
+      sortIndex: defaultSortIndex,
+      sortDirection: defaultSortDirection,
       aggregateEnabled: false,
       aggregateMethod: "sum"
     };
@@ -276,42 +304,41 @@
     tools.appendChild(actions);
     wrapper.insertBefore(tools, table);
 
-    var aggregateFoot = document.createElement("tfoot");
+    var aggregateFoot = table.tFoot || table.createTFoot();
     var aggregateRow = document.createElement("tr");
     aggregateRow.className = "aggregate-row";
     var headerCells = Array.prototype.slice.call(table.tHead ? table.tHead.rows[0].cells : []);
-    headerCells.forEach(function () {
+    headerCells.forEach(function (header, index) {
+      var name = normalizeHeader(header.textContent);
+      if (/^(aktion(en)?|auswahl|freigabe)$/.test(name) || header.querySelector("input[type='checkbox']")) {
+        header.dataset.sortable = "false";
+        header.classList.add(name.indexOf("aktion") === 0 ? "table-action-heading" : "table-selection-heading");
+      }
+      if (rows.some(function (row) { return row.children[index] && row.children[index].querySelector("input[type='checkbox']"); })) {
+        header.classList.add("table-selection-heading");
+      }
       aggregateRow.appendChild(document.createElement("td"));
     });
-    aggregateFoot.appendChild(aggregateRow);
-    table.appendChild(aggregateFoot);
-
-    var columnFilterRow = document.createElement("tr");
-    columnFilterRow.className = "column-filter-row";
-    headerCells.forEach(function (header, index) {
-      var filterCell = document.createElement("th");
-      var columnFilter = document.createElement("input");
-      columnFilter.type = "search";
-      columnFilter.placeholder = "Spalte filtern";
-      columnFilter.setAttribute("aria-label", header.textContent.trim() + " filtern");
-      var updateColumnFilter = debounce(function () {
-        state.columnQueries[index] = columnFilter.value;
-        state.page = 1;
-        render();
-      }, 180);
-      columnFilter.addEventListener("input", updateColumnFilter);
-      columnFilter.addEventListener("click", function (event) {
-        event.stopPropagation();
-      });
-      columnFilter.addEventListener("keydown", function (event) {
-        event.stopPropagation();
-      });
-      filterCell.appendChild(columnFilter);
-      columnFilterRow.appendChild(filterCell);
+    numericColumns.forEach(function (column) {
+      headerCells[column.index].classList.add("numeric");
+      rows.forEach(function (row) { if (row.children[column.index]) row.children[column.index].classList.add("numeric"); });
     });
-    table.tHead.appendChild(columnFilterRow);
+    aggregateFoot.appendChild(aggregateRow);
+
+    if (compact) {
+      compactControls = window.createCompactTableTools({
+        table: table, wrapper: wrapper, tools: tools, filter: filter, actions: actions,
+        aggregation: aggregation, aggregateToggle: aggregateToggle, aggregateMethod: aggregateMethod,
+        pagination: pagination, pageSize: pageSize, prev: prev, next: next, pageInfo: pageInfo,
+        state: state, rows: rows, headers: headerCells, render: render, tableIndex: tableIndex,
+        cellText: cellText, dateRange: dateRange, defaultSortIndex: defaultSortIndex, defaultSortDirection: defaultSortDirection
+      });
+    }
 
     headerCells.forEach(function (header, index) {
+      if (header.dataset.sortable === "false") {
+        return;
+      }
       header.classList.add("sortable-heading");
       header.tabIndex = 0;
       header.addEventListener("click", function () {
@@ -336,15 +363,15 @@
       var query = normalize(state.query);
       var current = rows.filter(function (row) {
         var rowText = Array.prototype.slice.call(row.children).map(function (_, index) {
-          return cellText(row, index);
+          return (state.searchIndex < 0 || state.searchIndex === index) && headerCells[index]?.dataset.sortable !== "false" ? cellText(row, index) : "";
         }).join(" ");
-        if (normalize(rowText).indexOf(query) === -1) {
+        var matchesSearch = compact
+          ? query.split(/\s+/).every(function (term) { return normalize(rowText).indexOf(term) >= 0; })
+          : normalize(rowText).indexOf(query) >= 0;
+        if (!matchesSearch || (compactControls && !compactControls.matches(row))) {
           return false;
         }
-        return state.columnQueries.every(function (columnQuery, index) {
-          var normalizedColumnQuery = normalize(columnQuery);
-          return !normalizedColumnQuery || normalize(cellText(row, index)).indexOf(normalizedColumnQuery) !== -1;
-        });
+        return true;
       });
       if (state.sortIndex >= 0) {
         current.sort(compareRows(state.sortIndex, state.sortDirection));
@@ -407,6 +434,15 @@
       prev.disabled = state.page <= 1;
       next.disabled = state.page >= pageCount;
       pageInfo.textContent = total + " Eintraege - Seite " + state.page + "/" + pageCount;
+      if (compactControls) {
+        compactControls.sync(total, start, Math.min(end, total), pageCount);
+        headerCells.forEach(function (header, index) {
+          if (header.dataset.sortable !== "false") {
+            header.setAttribute("aria-sort", state.sortIndex === index
+              ? (state.sortDirection === "asc" ? "ascending" : "descending") : "none");
+          }
+        });
+      }
       updateAggregation(current);
     }
 
@@ -442,13 +478,20 @@
       render();
     });
 
+    function refreshLiveAggregation() {
+      // Invoice forms recalculate their amounts on the same bubbling event.
+      queueMicrotask(function () { updateAggregation(filteredRows()); });
+    }
+    table.addEventListener("input", refreshLiveAggregation);
+    table.addEventListener("change", refreshLiveAggregation);
+
     table.dataset.enhancedTable = String(tableIndex);
     render();
   }
 
   function initSearchableSelect(select) {
     var filterSourceName = select.dataset.filterContractSelect || "";
-    var shouldSearch = select.options.length > 10;
+    var shouldSearch = select.options.length > 10 || select.dataset.searchable === "true";
     if (select.dataset.searchableEnhanced || select.multiple || (!shouldSearch && !filterSourceName)) {
       return;
     }
@@ -476,6 +519,9 @@
     display.className = "select-display";
     display.setAttribute("aria-haspopup", "listbox");
     display.setAttribute("aria-expanded", "false");
+    if (select.dataset.label) {
+      display.setAttribute("aria-label", select.dataset.label);
+    }
 
     var menu = document.createElement("div");
     menu.className = "select-menu";
@@ -539,12 +585,15 @@
     function syncNativeOptions(options) {
       select.innerHTML = "";
       if (options.length === 0) {
-        appendNativeOption({ value: "", text: "Keine Treffer", disabled: true });
+        var emptyLabel = select.dataset.emptyLabel || "Keine Treffer";
+        appendNativeOption({ value: "", text: emptyLabel, disabled: true });
         selectedValue = "";
         select.value = "";
-        display.textContent = "Keine Treffer";
+        display.textContent = emptyLabel;
+        display.disabled = true;
         return;
       }
+      display.disabled = select.disabled;
       options.forEach(appendNativeOption);
       if (!options.some(function (option) { return option.value === selectedValue; })) {
         selectedValue = options[0].value;
@@ -585,7 +634,7 @@
       syncNativeOptions(options);
       var selectedOption = selectedOptionData();
       var matches = options.filter(function (option) {
-        return !query || normalize(option.text + " " + option.value).indexOf(query) !== -1;
+        return !query || normalize(option.text + " " + option.value + " " + (option.dataset.optionDescription || "")).indexOf(query) !== -1;
       });
       var visible = [];
 
@@ -616,6 +665,12 @@
         optionButton.type = "button";
         optionButton.className = "select-option";
         optionButton.textContent = optionData.text;
+        if (optionData.dataset.optionDescription) {
+          var description = document.createElement("small");
+          description.className = "select-option-description";
+          description.textContent = optionData.dataset.optionDescription;
+          optionButton.appendChild(description);
+        }
         optionButton.setAttribute("role", "option");
         optionButton.setAttribute("aria-selected", optionData.value === selectedValue ? "true" : "false");
         optionButton.disabled = optionData.disabled;
@@ -657,6 +712,7 @@
         search.value = "";
         syncNativeOptions(allowedOptions());
         renderOptions();
+        select.dispatchEvent(new Event("change", { bubbles: true }));
       });
     }
     select.dataset.searchableEnhanced = "true";

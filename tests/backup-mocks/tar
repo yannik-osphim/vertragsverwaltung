@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${FAKE_TAR_FAIL:-0}" == 0 ]] || exit 1
+exec /usr/bin/tar "$@"

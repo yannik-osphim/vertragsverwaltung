@@ -8,7 +8,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN adduser --disabled-password --gecos "" appuser \
+RUN addgroup --gid 1000 appuser \
+    && adduser --disabled-password --gecos "" --uid 1000 --ingroup appuser appuser \
     && mkdir -p /app/data \
     && chown -R appuser:appuser /app
 

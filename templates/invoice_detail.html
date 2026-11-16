@@ -306,7 +306,7 @@
         <tr>
           <td>{{ (entry.start_date or entry.work_date) | date_de }} - {{ (entry.end_date or entry.work_date) | date_de }}</td>
           <td>{{ entry.service_name }}<br><span class="muted">{{ entry.work_item_type }}</span></td>
-          <td>{{ entry.user_name }}</td>
+          <td>{{ entry.user_name }}{% include "time_entry_source.html" %}</td>
           <td>{{ entry.hours | work_quantity }}</td>
           <td>
             {% if entry.description %}

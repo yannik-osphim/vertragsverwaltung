@@ -17,6 +17,19 @@ und rudimentaerem Rollen-/Permission-Management.
 - Benutzer, Rollen und Permissions
 - Analytics-Seite mit Chart.js-Zeitreihen fuer Umsatz, Lizenzbestand, Rechnungen und Stunden
 - Postgres-Datenhaltung per SQLModel
+- REST-API fuer Zeitbuchungen mit vertragsbezogenen API-Schluesseln
+
+## Zeitbuchungs-API
+
+Superadmins verwalten Schluessel unter **Verwaltung > API-Schluessel**.
+Der buchende Benutzer kann ein vorhandenes Konto oder ein frei eingegebener Name
+ohne Login-Konto sein. Vertragsfreigaben und Widerruf gelten fuer beide Varianten.
+`POST /create-booking` erfasst Zeiten, `POST /get-services` liefert
+Dienstleistungsposten und Stundenkontingente fuer einen bekannten Vertrag.
+Es gibt keine Vertragslisten-Abfrage per API-Key.
+
+Request-Beispiele, Authentifizierung und Deployment-Hinweise stehen in
+[docs/booking-api.md](docs/booking-api.md).
 
 ## Start
 
@@ -88,23 +101,112 @@ werden:
 Wenn `APP_ENV=production` gesetzt ist, verweigert die Anwendung den Start mit
 bekannten Default-Secrets oder `ALLOWED_HOSTS=*`.
 
-Compose enthaelt ausserdem einen `db-backup`-Service. Dieser schreibt per
-`pg_dump -Fc` regelmaessig Dumps in das Volume `db_backups`.
+## Automatische Backups
 
-- Intervall: `BACKUP_INTERVAL_SECONDS`, Standard 86400 Sekunden
-- Aufbewahrung: `BACKUP_RETENTION_DAYS`, Standard 14 Tage
+Der Compose-Service `db-backup` sichert alle 24 Stunden die PostgreSQL-Datenbank
+sowie das gesamte `app_data`-Volume, einschliesslich Vertrags-PDFs,
+Rechnungs-PDFs und Unternehmenslogos. Die erste vollstaendige Sicherung wird
+sofort angelegt. Danach zaehlt der Zeitpunkt der letzten erfolgreichen Sicherung;
+ein Container-Neustart setzt den Zeitplan nicht zurueck. Es ist kein fester
+Uhrzeit-Termin: 86400 Sekunden entsprechen einem 24-Stunden-Intervall.
 
-Beispiel fuer ein manuelles Backup:
+Unter **Verwaltung > Backups** (nur SuperAdmins) stehen Sicherungsliste,
+Download von Datenbank/Dateien/Pruefsummen, Dienststatus und **Jetzt sichern**
+zur Verfuegung. Automatik, Intervall, Aufbewahrung, Wiederholungsabstand und
+Zeitlimit sind dort bearbeitbar. Der Worker uebernimmt Aenderungen innerhalb
+von etwa 10 Sekunden, ohne Neustart. Ein bereits laufender Sicherungslauf
+beendet sich noch mit seinen bisherigen Einstellungen. Eine manuelle Sicherung
+ist auch bei pausierter Automatik moeglich und verschiebt den naechsten
+automatischen Termin entsprechend dem Intervall.
+
+Gespeicherte UI-Einstellungen haben Vorrang vor den Startwerten in `.env`:
+
+- `BACKUP_ENABLED=1`: Automatik aktiv
+- `BACKUP_INTERVAL_SECONDS=86400`: einmal pro Tag
+- `BACKUP_RETENTION_DAYS=14`: automatische Sicherungen 14 Tage aufbewahren
+- `BACKUP_RETRY_SECONDS=300`: bei Fehlern nach 5 Minuten erneut versuchen
+- `BACKUP_TIMEOUT_SECONDS=3600`: Zeitlimit je Sicherungs-/Pruefschritt
+
+Die Sicherungen liegen im Docker-Volume `db_backups`, im Container unter
+`/backups/snapshot-<UTC-Zeitstempel>-<Kennung>/`. Jeder Sicherungssatz enthaelt
+`database.dump`, `uploads.tar.gz`, `SHA256SUMS` und Metadaten. Der Dienst prueft
+Dump und Archiv vor der Freigabe. Fehlerhafte Laeufe ersetzen keine erfolgreiche
+Sicherung. Nur nach erfolgreicher Sicherung werden automatisch erzeugte Saetze
+entfernt, die aelter als 14 Tage sind. Vorhandene einzelne Dumps und manuelle
+Dateien bleiben unangetastet. Gleichzeitige Sicherungslaeufe sind gesperrt.
+
+Aktivieren/aktualisieren und Status pruefen:
 
 ```powershell
-docker compose exec db-backup pg_dump -h postgres -U user -d contracts -Fc -f /backups/manual.dump
+docker compose up -d --build --no-deps app db-backup
+docker compose ps db-backup
+docker compose logs --tail=30 db-backup
 ```
 
-Beispiel fuer Restore in eine leere Datenbank:
+Der Healthcheck meldet fehlende bzw. ueberfaellige Sicherungen als `unhealthy`
+(mit Zeitpuffer fuer einen laufenden Sicherungslauf und Wiederholungen).
+Docker meldet dies lokal; externe Benachrichtigungen sind nicht eingerichtet.
+Der Docker-Host muss laufen, damit der Dienst sichern kann. Nach einem Ausfall
+wird eine faellige Sicherung nachgeholt.
+
+Die Verwaltung nutzt vorhandene `app_settings`-Eintraege mit Praefix `backup_`;
+eine Schema-Migration ist nicht erforderlich. Die Webanwendung hat ausschliesslich
+Lesezugriff auf das Backup-Volume. Der separate Worker erhaelt die zusaetzliche
+Gruppe 1000 und gibt nur fertige Sicherungen fuer diese App-Gruppe lesbar frei
+(Verzeichnisse 0750, Dateien 0640). Ein Docker-Socket wird nicht eingebunden.
+Downloads und manuelle Anforderungen sind SuperAdmin-geschuetzt; Formulare
+pruefen einen CSRF-Token. Der Worker meldet seinen Status regelmaessig, auch
+waehrend eines laufenden Backups. Bei pausierter Automatik prueft der Healthcheck
+die Erreichbarkeit des Workers statt das Alter der letzten Sicherung.
+
+Die angezeigte Pruefung bezieht sich auf die Erstellung, nicht auf eine erneute
+Pruefsummenpruefung bei jedem Seitenaufruf. Einzelne alte `.dump`-Dateien ausserhalb
+der verwalteten Snapshot-Verzeichnisse bleiben erhalten und erscheinen nicht in
+der Liste. Die Wiederherstellung bleibt bewusst ein separater Wartungsvorgang;
+die laufende Anwendung kann ihren Datenbestand nicht per Klick ueberschreiben.
+
+Zusaetzlich sofort sichern bzw. die letzte Sicherung erneut pruefen:
 
 ```powershell
-docker compose exec db-backup pg_restore -h postgres -U user -d contracts --clean --if-exists /backups/manual.dump
+docker compose exec db-backup bash /opt/backup.sh run
+docker compose exec db-backup bash /opt/backup.sh verify
 ```
+
+Sicherungen auf den Host kopieren:
+
+```powershell
+docker compose cp db-backup:/backups ./backups-export
+```
+
+Wichtig: Ein Volume auf demselben Rechner schuetzt nicht vor Verlust des Rechners
+oder Datentraegers. Kopien separat und zugriffsgeschuetzt aufbewahren. `.env`,
+Quellcode und Proxy-Zertifikate sind nicht Teil dieser Datensicherung; insbesondere
+die `.env` mit den benoetigten Schluesseln separat sicher verwahren. `docker compose
+down -v` entfernt auch das Backup-Volume. `app_data` waehrend der Sicherung nicht
+manuell veraendern; Uploads der Anwendung nutzen unveraenderliche Dateinamen.
+
+### Wiederherstellung
+
+Vorher eine aktuelle Sicherung extern kopieren. `<snapshot-name>` durch den
+gewuenschten Verzeichnisnamen ersetzen. Die Wiederherstellung ueberschreibt den
+aktuellen Datenbestand; Anwendung und Backup-Dienst waehrenddessen stoppen.
+Die folgenden Befehle sind fuer PowerShell:
+
+```powershell
+docker compose exec db-backup bash /opt/backup.sh verify <snapshot-name>
+docker compose cp db-backup:/backups/<snapshot-name> ./restore-snapshot
+docker compose stop app db-backup
+docker compose run --rm --no-deps --entrypoint bash db-backup -c 'pg_restore -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --single-transaction /backups/<snapshot-name>/database.dump'
+docker compose run --rm --no-deps --user root --cap-add CHOWN --cap-add DAC_OVERRIDE --volume "${PWD}/restore-snapshot:/restore:ro" --entrypoint python app -c "import os, pathlib, pwd, tarfile; tarfile.open('/restore/uploads.tar.gz').extractall('/app/data', filter='data'); owner = pwd.getpwnam('appuser'); [os.chown(p, owner.pw_uid, owner.pw_gid, follow_symlinks=False) for p in [pathlib.Path('/app/data'), *pathlib.Path('/app/data').rglob('*')]]"
+docker compose up -d app db-backup
+```
+
+Die Datenbank wird transaktional wiederhergestellt. Uploads werden separat
+eingespielt; Anwendung erst nach erfolgreichem Abschluss beider Schritte starten.
+Der einmalige Upload-Restore nutzt zusaetzliche Rechte, um die Besitzer der
+wiederhergestellten Dateien fuer den App-Benutzer zu korrigieren. Das aendert
+nicht die Rechte des normalen Webservers. Zusaetzliche, nicht im Archiv
+enthaltene Dateien im Daten-Volume werden nicht geloescht.
 
 ## Login
 

@@ -1,0 +1,8 @@
+<aside class="administration-sidebar">
+  <p class="administration-sidebar-title" id="administration-navigation-title">Verwaltung</p>
+  <nav class="administration-navigation" aria-labelledby="administration-navigation-title">
+    {% for item in administration_items %}
+    <a href="{{ item.href }}" {% if item.active %}class="active" aria-current="page"{% endif %}>{{ item.label }}</a>
+    {% endfor %}
+  </nav>
+</aside>

@@ -21,6 +21,9 @@
   </script>
   <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="{{ table_asset_url('compact-tables.css') }}">
+  {% if administration_active %}<link rel="stylesheet" href="/static/administration.css?v=1">{% endif %}
+  {% block styles %}{% endblock %}
 </head>
 <body>
   {% if user %}
@@ -29,7 +32,7 @@
       <img src="/static/osphim-logo.png" alt="OSPHIM">
       <span>Vertragsverwaltung</span>
     </a>
-    <nav class="nav">
+    <nav class="nav" aria-label="Hauptnavigation">
       <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
       {% if has_permission('companies.view') or has_permission('contracts.view') %}
       <a href="/companies" class="{% if request.url.path.startswith('/companies') or request.url.path.startswith('/contracts') or request.url.path.startswith('/licenses') or request.url.path.startswith('/services') or request.url.path.startswith('/flat-fees') %}active{% endif %}">Stammdaten</a>
@@ -50,27 +53,8 @@
       {% if has_permission('analytics.view') %}
       <a href="/analytics" class="{% if request.url.path.startswith('/analytics') %}active{% endif %}">Analytics</a>
       {% endif %}
-      {% if has_permission('catalog.manage') or has_permission('characteristics.manage') or has_permission('settings.manage') or has_permission('users.manage') or is_superadmin %}
-      <details class="nav-menu">
-        <summary class="{% if request.url.path.startswith('/catalog') or request.url.path.startswith('/characteristics') or request.url.path.startswith('/settings') or request.url.path.startswith('/users') or request.url.path.startswith('/notifications') %}active{% endif %}">Verwaltung</summary>
-        <div class="nav-dropdown">
-          {% if has_permission('catalog.manage') %}
-          <a href="/catalog" class="{% if request.url.path.startswith('/catalog') %}active{% endif %}">Katalog</a>
-          {% endif %}
-          {% if has_permission('characteristics.manage') %}
-          <a href="/characteristics" class="{% if request.url.path.startswith('/characteristics') %}active{% endif %}">Merkmale</a>
-          {% endif %}
-          {% if has_permission('settings.manage') %}
-          <a href="/settings" class="{% if request.url.path.startswith('/settings') %}active{% endif %}">Einstellungen</a>
-          {% endif %}
-          {% if has_permission('users.manage') %}
-          <a href="/users" class="{% if request.url.path.startswith('/users') %}active{% endif %}">Benutzer</a>
-          {% endif %}
-          {% if is_superadmin %}
-          <a href="/notifications" class="{% if request.url.path.startswith('/notifications') %}active{% endif %}">Benachrichtigungen</a>
-          {% endif %}
-        </div>
-      </details>
+      {% if administration_items %}
+      <a href="{{ administration_items[0].href }}" class="{% if administration_active %}active{% endif %}" {% if administration_active %}aria-current="true"{% endif %}>Verwaltung</a>
       {% endif %}
     </nav>
     <div class="user-menu">
@@ -82,7 +66,12 @@
   {% else %}
   <button class="theme-toggle auth-theme-toggle" type="button" data-theme-toggle aria-label="Farbschema wechseln">Dunkel</button>
   {% endif %}
-  <main class="{% if user %}app-shell{% else %}auth-shell{% endif %}">
+  <main class="{% if user %}app-shell{% else %}auth-shell{% endif %}{% if administration_active %} administration-shell{% endif %}">
+    {% if administration_active %}
+    <div class="administration-layout">
+      {% include "administration_sidebar.html" %}
+      <div class="administration-content">
+    {% endif %}
     {% if user and breadcrumbs %}
     <nav class="breadcrumbs" aria-label="Breadcrumb">
       {% if back_url %}
@@ -96,13 +85,19 @@
     </nav>
     {% endif %}
     {% block content %}{% endblock %}
+    {% if administration_active %}
+      </div>
+    </div>
+    {% endif %}
   </main>
-  <script src="/static/table-controls.js" defer></script>
+  <script src="{{ table_asset_url('compact-tables.js') }}" defer></script>
+  <script src="{{ table_asset_url('table-controls.js') }}" defer></script>
   <script src="/static/action-menu.js" defer></script>
   <script src="/static/confirm-delete.js" defer></script>
   <script src="/static/file-upload.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js" defer></script>
   <script src="/static/rich-text-editor.js" defer></script>
   <script src="/static/theme.js" defer></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

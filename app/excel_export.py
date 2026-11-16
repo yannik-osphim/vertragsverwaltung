@@ -46,6 +46,9 @@ EXPORT_TABLES: tuple[tuple[str, str], ...] = (
     ("characteristic_values", "Merkmalswerte"),
     ("app_settings", "Einstellungen"),
     ("users", "Benutzer"),
+    ("api_keys", "API Schluessel"),
+    ("api_key_contracts", "API Vertragsfreigaben"),
+    ("api_booking_requests", "API Buchungsreferenzen"),
     ("roles", "Rollen"),
     ("permissions", "Rechte"),
     ("role_permissions", "Rollen Rechte"),
@@ -53,9 +56,13 @@ EXPORT_TABLES: tuple[tuple[str, str], ...] = (
 
 REDACTED_COLUMNS = {
     "users": {"password_hash"},
+    "api_keys": {"key_hash"},
+    "api_booking_requests": {"request_hash", "response_json"},
 }
 
 ORDER_COLUMNS = {
+    "api_key_contracts": ("api_key_id", "contract_id"),
+    "api_booking_requests": ("api_key_id", "request_id"),
     "app_settings": ("key",),
     "invoice_time_entries": ("invoice_id", "time_entry_id"),
     "role_permissions": ("role_id", "permission_id"),
@@ -75,7 +82,7 @@ def export_info_sheet(exported_by: str, exported_at: datetime) -> Worksheet:
         ["Exportiert am", exported_at.isoformat(timespec="seconds")],
         ["Exportiert von", exported_by],
         ["Datenbank", database.engine.url.render_as_string(hide_password=True)],
-        ["Hinweis", "Benutzer-Passwort-Hashes werden aus Sicherheitsgruenden nicht exportiert."],
+        ["Hinweis", "Passwort- und API-Schluessel-Hashes werden aus Sicherheitsgruenden nicht exportiert."],
         ["Dateiuploads", "PDFs und Logos werden nicht eingebettet; Dateinamen stehen in den jeweiligen Tabellen."],
     ]
     return Worksheet("Export Info", ["Feld", "Wert"], rows)

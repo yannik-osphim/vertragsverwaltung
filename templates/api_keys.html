@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}API-Schluessel - Vertragsverwaltung{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">Verwaltung</p><h1>API-Schluessel</h1></div>
+  <a class="button primary" href="/api-keys/new">Schluessel anlegen</a>
+</section>
+{% if saved %}<div class="alert success-alert" role="status">API-Schluessel aktualisiert.</div>{% endif %}
+{% if new_key %}
+<section class="analytics-band generated-secret" role="status">
+  <h2>Neuer API-Schluessel</h2>
+  <p class="muted">Nur jetzt sichtbar. Vertraulich aufbewahren.</p>
+  <code class="secret-value">{{ new_key }}</code>
+</section>
+{% endif %}
+<section class="analytics-band">
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Bezeichnung</th><th>Benutzer</th><th>Vertraege</th><th>Erstellt</th>
+        <th>Ablauf</th><th>Zuletzt genutzt</th><th>Status</th><th>Aktion</th>
+      </tr></thead>
+      <tbody>
+        {% for item in keys %}
+        <tr>
+          <td>{{ item.name }}<br><code class="muted">{{ item.key_prefix }}...</code></td>
+          <td>{{ item.full_name }}{% if item.user_id is none %}<br><span class="muted">Ohne Benutzerkonto</span>{% endif %}</td>
+          <td>{{ item.contracts | join(', ') or '-' }}</td>
+          <td>{{ item.created_at | datetime_de }}</td>
+          <td>{{ item.expires_at | datetime_de }}</td>
+          <td>{{ item.last_used_at | datetime_de }}</td>
+          <td><span class="status {{ item.status }}">{{ item.status_label }}</span></td>
+          <td class="action-cell">
+            {% if not item.revoked_at %}
+            <details class="row-action-menu">
+              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <div class="row-action-list">
+                <a class="button secondary" href="/api-keys/{{ item.id }}/edit">Bearbeiten</a>
+                <form method="post" action="/api-keys/{{ item.id }}/revoke" data-confirm-message="API-Schluessel unwiderruflich sperren?">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="button danger" type="submit">Widerrufen</button>
+                </form>
+              </div>
+            </details>
+            {% else %}<span class="muted">-</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}<tr><td colspan="8" class="empty">Keine API-Schluessel vorhanden.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

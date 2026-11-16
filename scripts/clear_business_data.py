@@ -12,6 +12,8 @@ from app import database  # noqa: E402
 
 
 BUSINESS_TABLES = [
+    "api_booking_requests",
+    "api_key_contracts",
     "invoice_time_entries",
     "invoice_line_items",
     "invoices",
@@ -31,6 +33,7 @@ BUSINESS_TABLES = [
 ]
 
 SYSTEM_TABLES = [
+    "api_keys",
     "users",
     "roles",
     "permissions",
