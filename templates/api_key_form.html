@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}API-Schluessel {{ 'bearbeiten' if key else 'anlegen' }} - Vertragsverwaltung{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="/static/api-key-form.css?v=1">
+{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">Verwaltung</p><h1>API-Schluessel {{ 'bearbeiten' if key else 'anlegen' }}</h1></div>
+</section>
+{% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+<form class="api-key-form" method="post" action="{{ form_action or '/api-keys' }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="form-section">
+    <h2 class="form-section-title">Zuordnung</h2>
+    <div class="form-section-grid two-column-section">
+      <label><span>Bezeichnung *</span><input name="name" maxlength="120" value="{{ values.name }}" required></label>
+      <label><span>Gueltig bis (einschliesslich, UTC)</span><input type="date" name="expires_on" value="{{ values.expires_on }}" {% if not key %}min="{{ today }}"{% endif %}></label>
+    </div>
+  </section>
+  <section class="form-section">
+    {% if key %}
+    <h2 class="form-section-title">Buchender Benutzer</h2>
+    <div class="form-section-grid two-column-section">
+      <label><span>{{ 'Benutzerkonto' if key.user_id is not none else 'Ohne Benutzerkonto' }}</span><input value="{{ key.full_name }}" readonly></label>
+      <label><span>Schluesselkennung</span><input value="{{ key.key_prefix }}..." readonly></label>
+    </div>
+    {% else %}
+    <h2 class="form-section-title" id="booking-owner-title">Buchender Benutzer *</h2>
+    <div class="api-key-owner-toggle" role="radiogroup" aria-labelledby="booking-owner-title">
+      <label><input type="radio" name="owner_type" value="account" {% if values.owner_type != 'external' %}checked{% endif %}><span>Mit Benutzerkonto</span></label>
+      <label><input type="radio" name="owner_type" value="external" {% if values.owner_type == 'external' %}checked{% endif %}><span>Ohne Benutzerkonto</span></label>
+    </div>
+    <div class="api-key-owner-field" data-owner-field="account" {% if values.owner_type == 'external' %}hidden{% endif %}>
+      <label><span>Benutzerkonto *</span>
+        <select name="user_id" {% if values.owner_type == 'external' %}disabled{% else %}required{% endif %}>
+          <option value="">Bitte auswaehlen</option>
+          {% for item in booking_users %}
+          <option value="{{ item.id }}" {% if values.user_id == item.id %}selected{% endif %}>{{ item.full_name }} ({{ item.username }})</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="api-key-owner-field" data-owner-field="external" {% if values.owner_type != 'external' %}hidden{% endif %}>
+      <label><span>Vor- und Nachname *</span><input name="booking_name" maxlength="250" value="{{ values.booking_name }}" autocomplete="off" {% if values.owner_type == 'external' %}required{% else %}disabled{% endif %}></label>
+    </div>
+    {% endif %}
+  </section>
+  <section class="form-section">
+    <h2 class="form-section-title">Freigegebene Vertraege{% if not key %} *{% endif %}</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Freigabe</th><th>Vertragsnummer</th><th>Titel</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for item in contracts %}
+          <tr>
+            <td><input type="checkbox" name="contract_ids" value="{{ item.id }}" aria-label="{{ item.contract_number }} freigeben" {% if item.id in values.contract_ids %}checked{% endif %}></td>
+            <td>{{ item.contract_number }}</td><td>{{ item.title }}</td>
+            <td><span class="status {{ item.status }}">{{ item.status | status_label }}</span></td>
+          </tr>
+          {% else %}<tr><td colspan="4" class="empty">Keine Vertraege vorhanden.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <div class="form-actions">
+    <a class="button secondary" href="/api-keys">Abbrechen</a>
+    <button class="button primary" type="submit" {% if not contracts and not key %}disabled{% endif %}>{{ 'Aenderungen speichern' if key else 'Schluessel erstellen' }}</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="/static/api-key-form.js?v=1" defer></script>
+{% endblock %}

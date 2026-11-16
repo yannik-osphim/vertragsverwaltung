@@ -1,0 +1,106 @@
+.app-shell.administration-shell {
+  width: min(1440px, calc(100% - 2rem));
+}
+
+.administration-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  align-items: start;
+  gap: 32px;
+}
+
+.administration-sidebar {
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  padding: 8px 20px 24px 0;
+}
+
+.administration-sidebar-title {
+  margin: 0 0 16px;
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.administration-navigation {
+  display: grid;
+  gap: 6px;
+}
+
+.administration-navigation a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-left: 3px solid transparent;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.administration-navigation a:hover {
+  color: var(--ink);
+  background: var(--soft-surface);
+}
+
+.administration-navigation a.active {
+  border-left-color: var(--accent);
+  color: var(--primary-dark);
+  background: var(--primary-soft);
+}
+
+.administration-content {
+  min-width: 0;
+}
+
+@media (max-width: 1000px) {
+  .administration-layout {
+    grid-template-columns: 192px minmax(0, 1fr);
+    gap: 24px;
+  }
+  .administration-sidebar {
+    padding-right: 12px;
+  }
+  .administration-content .form-section-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .administration-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .administration-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0 0 20px;
+  }
+  .administration-sidebar-title {
+    padding: 0;
+    margin-bottom: 12px;
+  }
+  .administration-navigation {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .administration-content .form-section-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .administration-navigation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .administration-navigation a {
+    padding: 8px;
+    font-size: 0.8125rem;
+  }
+}

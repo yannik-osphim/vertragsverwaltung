@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+from hashlib import sha256
 from html import escape as html_escape
 from html.parser import HTMLParser
 from io import BytesIO
@@ -24,7 +25,7 @@ from markupsafe import Markup
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import database
+from . import backups, booking_api, database
 from .excel_export import create_database_export_workbook
 from .security import (
     SESSION_COOKIE_NAME,
@@ -39,6 +40,10 @@ from .security import (
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
+TABLE_ASSET_VERSIONS = {
+    name: sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:12]
+    for name in ("table-controls.js", "compact-tables.js", "compact-tables.css")
+}
 logger = logging.getLogger(__name__)
 
 
@@ -281,7 +286,7 @@ def parse_hours(value: str) -> Decimal:
         hours = Decimal(normalized).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     except InvalidOperation as exc:
         raise ValueError("Bitte einen gueltigen Aufwand eingeben.") from exc
-    if hours <= 0:
+    if not hours.is_finite() or hours <= 0:
         raise ValueError("Aufwand muss groesser als 0 sein.")
     return hours
 
@@ -1466,6 +1471,8 @@ if FORCE_HTTPS:
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
+    if request.url.path in {"/create-booking", "/get-services"} or request.url.path.startswith("/api-keys"):
+        response.headers["Cache-Control"] = "no-store"
     if ENABLE_SECURITY_HEADERS:
         embeddable_pdf = bool(
             re.fullmatch(r"/contracts/\d+/document", request.url.path)
@@ -1498,6 +1505,7 @@ async def add_security_headers(request: Request, call_next):
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+templates.env.globals["table_asset_url"] = lambda name: f"/static/{name}?v={TABLE_ASSET_VERSIONS[name]}"
 templates.env.filters["money"] = money
 templates.env.filters["date_de"] = date_de
 templates.env.filters["datetime_de"] = datetime_de
@@ -1682,7 +1690,7 @@ def breadcrumbs_for_path(path: str) -> list[dict[str, str]]:
         return [{"label": "Analytics", "href": "/analytics"}]
 
     if path.startswith("/catalog"):
-        items = [{"label": "Verwaltung", "href": "/catalog"}, {"label": "Katalog", "href": "/catalog"}]
+        items = [{"label": "Verwaltung", "href": "/settings"}, {"label": "Katalog", "href": "/catalog"}]
         if "/types/" in path and path.endswith("/edit"):
             items.append({"label": "Katalogeintrag bearbeiten", "href": path})
         elif "/license-types/" in path and path.endswith("/edit"):
@@ -1694,17 +1702,28 @@ def breadcrumbs_for_path(path: str) -> list[dict[str, str]]:
         return items
 
     if path.startswith("/characteristics"):
-        return [{"label": "Verwaltung", "href": "/characteristics"}, {"label": "Merkmale", "href": path}]
+        return [{"label": "Verwaltung", "href": "/settings"}, {"label": "Merkmale", "href": path}]
 
     if path.startswith("/users"):
-        return [{"label": "Verwaltung", "href": "/users"}, {"label": "Benutzer", "href": path}]
+        return [{"label": "Verwaltung", "href": "/settings"}, {"label": "Benutzer", "href": path}]
+
+    if path.startswith("/api-keys"):
+        items = [{"label": "Verwaltung", "href": "/settings"}, {"label": "API-Schluessel", "href": "/api-keys"}]
+        if path.endswith("/new"):
+            items.append({"label": "Neu", "href": path})
+        elif path.endswith(("/edit", "/update")):
+            items.append({"label": "Bearbeiten", "href": path.replace("/update", "/edit")})
+        return items
 
     if path.startswith("/settings"):
         return [{"label": "Verwaltung", "href": "/settings"}, {"label": "Einstellungen", "href": path}]
 
+    if path == "/backups" or path.startswith("/backups/"):
+        return [{"label": "Verwaltung", "href": "/settings"}, {"label": "Backups", "href": "/backups"}]
+
     if path.startswith("/notifications"):
         return [
-            {"label": "Verwaltung", "href": "/notifications"},
+            {"label": "Verwaltung", "href": "/settings"},
             {"label": "Benachrichtigungen", "href": path},
         ]
 
@@ -1714,6 +1733,8 @@ def breadcrumbs_for_path(path: str) -> list[dict[str, str]]:
 def back_url_for_path(path: str, user: dict[str, Any] | None) -> str:
     if path in {"/", "/login"}:
         return ""
+    if path.startswith("/api-keys/"):
+        return "/api-keys"
     if path == "/time-entries/new":
         return "/time-entries" if has_permission(user, "time.approve") else "/"
     if path.startswith("/time-entries/") and path.endswith("/edit"):
@@ -1760,6 +1781,7 @@ def back_url_for_path(path: str, user: dict[str, Any] | None) -> str:
         "/characteristics": "/",
         "/notifications": "/",
         "/settings": "/",
+        "/backups": "/settings",
         "/users": "/",
     }
     return parent_paths.get(path, "/")
@@ -1784,6 +1806,23 @@ def billing_nav_group_count(user: dict[str, Any] | None) -> int:
     return len(groups)
 
 
+def administration_navigation(user: dict[str, Any] | None, path: str) -> list[dict[str, Any]]:
+    items = (
+        ("Einstellungen", "/settings", "settings.manage"),
+        ("Backups", "/backups", None),
+        ("Katalog", "/catalog", "catalog.manage"),
+        ("Merkmale", "/characteristics", "characteristics.manage"),
+        ("Benutzer", "/users", "users.manage"),
+        ("API-Schluessel", "/api-keys", None),
+        ("Benachrichtigungen", "/notifications", None),
+    )
+    return [
+        {"label": label, "href": href, "active": path == href or path.startswith(href + "/")}
+        for label, href, permission in items
+        if (has_permission(user, permission) if permission else is_superadmin(user))
+    ]
+
+
 def render(
     request: Request,
     template_name: str,
@@ -1793,6 +1832,7 @@ def render(
     user = get_current_user(request)
     path = request.url.path
     settings = app_settings()
+    administration_items = administration_navigation(user, path)
     base_context = {
         "request": request,
         "user": user,
@@ -1817,6 +1857,8 @@ def render(
         "billing_nav_count": billing_nav_group_count(user),
         "breadcrumbs": breadcrumbs_for_path(path) if user else [],
         "back_url": back_url_for_path(path, user) if user else "",
+        "administration_items": administration_items,
+        "administration_active": any(item["active"] for item in administration_items),
     }
     if context:
         base_context.update(context)
@@ -2223,7 +2265,7 @@ def service_options(include_service_id: int | None = None) -> list[dict[str, Any
             params = (include_service_id,)
         rows = connection.execute(
             f"""
-            SELECT services.id, services.contract_id, services.name,
+            SELECT services.id, services.contract_id, services.name, services.notes,
                    contracts.contract_number, companies.name AS company_name
             FROM services
             JOIN contracts ON contracts.id = services.contract_id
@@ -2293,7 +2335,7 @@ def bookable_work_item_options(
     with database.connect() as connection:
         rows = connection.execute(
             f"""
-            SELECT flat_fees.id, flat_fees.contract_id, flat_fees.name,
+            SELECT flat_fees.id, flat_fees.contract_id, flat_fees.name, flat_fees.notes,
                    contracts.contract_number, companies.name AS company_name
             FROM flat_fees
             JOIN contracts ON contracts.id = flat_fees.contract_id
@@ -2558,11 +2600,11 @@ def fetch_contract_bundle(contract_id: int) -> dict[str, Any]:
                        WHEN service_time_entries.flat_fee_id IS NULL THEN 'Dienstleistung'
                        ELSE 'Pauschale'
                    END AS work_item_type,
-                   users.full_name AS user_name
+                   COALESCE(NULLIF(service_time_entries.booking_name, ''), users.full_name, '-') AS user_name
             FROM service_time_entries
             LEFT JOIN services ON services.id = service_time_entries.service_id
             LEFT JOIN flat_fees ON flat_fees.id = service_time_entries.flat_fee_id
-            JOIN users ON users.id = service_time_entries.user_id
+            LEFT JOIN users ON users.id = service_time_entries.user_id
             WHERE service_time_entries.contract_id = ?
             ORDER BY COALESCE(service_time_entries.start_date, service_time_entries.work_date) DESC,
                      service_time_entries.id DESC
@@ -3673,13 +3715,13 @@ def dashboard_data(user: dict[str, Any] | None = None) -> dict[str, Any]:
                        ELSE 'Pauschale'
                    END AS work_item_type,
                    contracts.contract_number, companies.name AS company_name,
-                   users.full_name AS user_name
+                   COALESCE(NULLIF(service_time_entries.booking_name, ''), users.full_name, '-') AS user_name
             FROM service_time_entries
             LEFT JOIN services ON services.id = service_time_entries.service_id
             LEFT JOIN flat_fees ON flat_fees.id = service_time_entries.flat_fee_id
             JOIN contracts ON contracts.id = service_time_entries.contract_id
             JOIN companies ON companies.id = contracts.company_id
-            JOIN users ON users.id = service_time_entries.user_id
+            LEFT JOIN users ON users.id = service_time_entries.user_id
             ORDER BY COALESCE(service_time_entries.start_date, service_time_entries.work_date) DESC
             LIMIT 6
             """
@@ -5635,6 +5677,7 @@ def delete_contract(
             (contract_id,),
         )
         connection.execute("DELETE FROM contracts WHERE id = ?", (contract_id,))
+        connection.execute("DELETE FROM api_key_contracts WHERE contract_id = ?", (contract_id,))
     return redirect_to("/contracts")
 
 
@@ -6859,7 +6902,8 @@ def time_entries_index(
                        ELSE 'Pauschale'
                    END AS work_item_type,
                    contracts.contract_number, contracts.title AS contract_title,
-                   companies.name AS company_name, users.full_name AS user_name,
+                   companies.name AS company_name,
+                   COALESCE(NULLIF(service_time_entries.booking_name, ''), users.full_name, '-') AS user_name,
                    EXISTS (
                        SELECT 1
                        FROM invoice_time_entries
@@ -6870,7 +6914,7 @@ def time_entries_index(
             LEFT JOIN flat_fees ON flat_fees.id = service_time_entries.flat_fee_id
             JOIN contracts ON contracts.id = service_time_entries.contract_id
             JOIN companies ON companies.id = contracts.company_id
-            JOIN users ON users.id = service_time_entries.user_id
+            LEFT JOIN users ON users.id = service_time_entries.user_id
             ORDER BY COALESCE(service_time_entries.start_date, service_time_entries.work_date) DESC,
                      service_time_entries.id DESC
             """
@@ -6921,7 +6965,8 @@ def edit_time_entry_form(
                        ELSE 'Pauschale'
                    END AS work_item_type,
                    contracts.contract_number, contracts.title AS contract_title,
-                   companies.name AS company_name, users.full_name AS user_name,
+                   companies.name AS company_name,
+                   COALESCE(NULLIF(service_time_entries.booking_name, ''), users.full_name, '-') AS user_name,
                    EXISTS (
                        SELECT 1
                        FROM invoice_time_entries
@@ -6932,7 +6977,7 @@ def edit_time_entry_form(
             LEFT JOIN flat_fees ON flat_fees.id = service_time_entries.flat_fee_id
             JOIN contracts ON contracts.id = service_time_entries.contract_id
             JOIN companies ON companies.id = contracts.company_id
-            JOIN users ON users.id = service_time_entries.user_id
+            LEFT JOIN users ON users.id = service_time_entries.user_id
             WHERE service_time_entries.id = ?
             """,
             (entry_id,),
@@ -6963,6 +7008,7 @@ def edit_time_entry_form(
 
 @app.post("/time-entries")
 def create_time_entry(
+    request: Request,
     contract_id: int = Form(...),
     work_item_key: str = Form(...),
     start_date: str = Form(...),
@@ -6972,19 +7018,34 @@ def create_time_entry(
     return_to: str = Form("/time-entries/new"),
     user: dict[str, Any] = Depends(require_permission("time.create")),
 ):
-    parsed_start = parse_iso_date(start_date)
-    parsed_end = parse_iso_date(end_date)
-    if parsed_start is None or parsed_end is None:
-        raise HTTPException(status_code=400, detail="Start- und Enddatum fehlen.")
-    if parsed_end < parsed_start:
-        raise HTTPException(status_code=400, detail="Enddatum darf nicht vor dem Startdatum liegen.")
-    parsed_hours = parse_work_amount_to_hours(hours)
+    try:
+        parsed_start = parse_iso_date(start_date)
+        parsed_end = parse_iso_date(end_date)
+        if parsed_start is None or parsed_end is None:
+            raise ValueError("Start- und Enddatum fehlen.")
+        if parsed_end < parsed_start:
+            raise ValueError("Enddatum darf nicht vor dem Startdatum liegen.")
+        parsed_hours = parse_work_amount_to_hours(hours)
+        work_item_kind, work_item_id = parse_work_item_key(work_item_key)
+        allowed_items = bookable_work_item_options()
+        if not any(item["key"] == work_item_key and item["contract_id"] == contract_id for item in allowed_items):
+            raise ValueError("Bitte eine aktive Leistung des ausgewaehlten Vertrags auswaehlen.")
+    except ValueError as exc:
+        return render(
+            request,
+            "time_entry_form.html",
+            {
+                "error": str(exc), "saved": False,
+                "entry": {"contract_id": contract_id, "work_item_key": work_item_key,
+                          "start_date": start_date, "end_date": end_date,
+                          "hours_input": hours, "description": description},
+                "contracts": contract_options(), "work_items": bookable_work_item_options(),
+                "return_to": "/time-entries/new",
+            },
+            status_code=400,
+        )
     timestamp = now_iso()
     with database.connect() as connection:
-        try:
-            work_item_kind, work_item_id = parse_work_item_key(work_item_key)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
         service_id = None
         flat_fee_id = None
         if work_item_kind == "service":
@@ -7012,9 +7073,9 @@ def create_time_entry(
             """
             INSERT INTO service_time_entries (
                 contract_id, service_id, flat_fee_id, user_id, work_date, start_date, end_date, hours, description,
-                status, created_at, updated_at
+                status, booking_source, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', 'web', ?, ?)
             """,
             (
                 contract_id,
@@ -7051,14 +7112,15 @@ def update_time_entry(
     with database.connect() as connection:
         existing = connection.execute(
             """
-            SELECT service_time_entries.*, users.full_name AS user_name,
+            SELECT service_time_entries.*,
+                   COALESCE(NULLIF(service_time_entries.booking_name, ''), users.full_name, '-') AS user_name,
                    EXISTS (
                        SELECT 1
                        FROM invoice_time_entries
                        WHERE invoice_time_entries.time_entry_id = service_time_entries.id
                    ) AS has_invoice_link
             FROM service_time_entries
-            JOIN users ON users.id = service_time_entries.user_id
+            LEFT JOIN users ON users.id = service_time_entries.user_id
             WHERE service_time_entries.id = ?
             """,
             (entry_id,),
@@ -7075,6 +7137,7 @@ def update_time_entry(
             "start_date": start_date,
             "end_date": end_date,
             "hours": hours,
+            "hours_input": hours,
             "status": status_value,
             "description": description,
         }
@@ -7370,12 +7433,12 @@ def invoice_detail_context(invoice_id: int) -> dict[str, Any]:
                        WHEN service_time_entries.flat_fee_id IS NULL THEN 'Dienstleistung'
                        ELSE 'Pauschale'
                    END AS work_item_type,
-                   users.full_name AS user_name
+                   COALESCE(NULLIF(service_time_entries.booking_name, ''), users.full_name, '-') AS user_name
             FROM invoice_time_entries
             JOIN service_time_entries ON service_time_entries.id = invoice_time_entries.time_entry_id
             LEFT JOIN services ON services.id = service_time_entries.service_id
             LEFT JOIN flat_fees ON flat_fees.id = service_time_entries.flat_fee_id
-            JOIN users ON users.id = service_time_entries.user_id
+            LEFT JOIN users ON users.id = service_time_entries.user_id
             WHERE invoice_time_entries.invoice_id = ?
             ORDER BY COALESCE(service_time_entries.start_date, service_time_entries.work_date)
             """,
@@ -9400,6 +9463,245 @@ def delete_characteristic_definition(
     return redirect_to("/characteristics")
 
 
+def api_key_csrf_token(user: dict[str, Any]) -> str:
+    return create_session_token({"purpose": "api-key-management", "user_id": user["id"]})
+
+
+def validate_api_key_csrf(token: str, user: dict[str, Any]) -> None:
+    payload = read_session_token(token)
+    if not payload or payload.get("purpose") != "api-key-management" or payload.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Formular abgelaufen. Bitte Seite neu laden.")
+
+
+def api_key_form_context(user: dict[str, Any]) -> dict[str, Any]:
+    with database.connect() as connection:
+        users = connection.execute(
+            """SELECT users.id, users.full_name, users.username FROM users
+               JOIN roles ON roles.id = users.role_id
+               WHERE users.active = 1 AND (roles.name = 'admin' OR EXISTS (
+                   SELECT 1 FROM role_permissions
+                   JOIN permissions ON permissions.id = role_permissions.permission_id
+                   WHERE role_permissions.role_id = users.role_id AND permissions.key = 'time.create'
+               )) ORDER BY users.full_name"""
+        ).fetchall()
+        contracts = connection.execute(
+            "SELECT id, contract_number, title, status FROM contracts ORDER BY contract_number, id"
+        ).fetchall()
+    return {
+        "booking_users": users, "contracts": contracts, "csrf_token": api_key_csrf_token(user),
+        "values": {"name": "", "user_id": "", "owner_type": "account" if users else "external",
+                   "booking_name": "", "expires_on": "", "contract_ids": []},
+    }
+
+
+def api_key_expiry_date(expires_at: str | None) -> str:
+    if not expires_at:
+        return ""
+    return (datetime.fromisoformat(expires_at).astimezone(timezone.utc).date() - timedelta(days=1)).isoformat()
+
+
+def parse_api_key_expiry(expires_on: str) -> str | None:
+    if not expires_on:
+        return None
+    expires_date = date.fromisoformat(expires_on)
+    if expires_date < datetime.now(timezone.utc).date():
+        raise ValueError("Das Ablaufdatum darf nicht in der Vergangenheit liegen.")
+    return datetime.combine(expires_date + timedelta(days=1), datetime.min.time(), timezone.utc).isoformat()
+
+
+def api_key_edit_context(user: dict[str, Any], key_id: int) -> dict[str, Any]:
+    context = api_key_form_context(user)
+    with database.connect() as connection:
+        key = connection.execute(
+            """SELECT api_keys.id, api_keys.name, api_keys.key_prefix, api_keys.user_id,
+                      api_keys.booking_name, api_keys.expires_at, api_keys.revoked_at,
+                      COALESCE(users.full_name, api_keys.booking_name) AS full_name
+               FROM api_keys LEFT JOIN users ON users.id = api_keys.user_id
+               WHERE api_keys.id = ?""", (key_id,),
+        ).fetchone()
+        if key is None:
+            raise HTTPException(status_code=404, detail="API-Schluessel nicht gefunden.")
+        if key["revoked_at"]:
+            raise HTTPException(status_code=409, detail="Widerrufene API-Schluessel koennen nicht bearbeitet werden.")
+        contract_ids = [row["contract_id"] for row in connection.execute(
+            "SELECT contract_id FROM api_key_contracts WHERE api_key_id = ?", (key_id,),
+        ).fetchall()]
+    context.update({
+        "key": dict(key), "form_action": f"/api-keys/{key_id}/update",
+        "values": {"name": key["name"], "expires_on": api_key_expiry_date(key["expires_at"]),
+                   "contract_ids": contract_ids},
+    })
+    return context
+
+
+def api_key_list_context(user: dict[str, Any]) -> dict[str, Any]:
+    with database.connect() as connection:
+        keys = connection.execute(
+            """SELECT api_keys.id, api_keys.name, api_keys.key_prefix, api_keys.created_at,
+                      api_keys.expires_at, api_keys.last_used_at, api_keys.revoked_at,
+                      api_keys.user_id, COALESCE(users.full_name, api_keys.booking_name) AS full_name,
+                      users.active AS user_active
+               FROM api_keys LEFT JOIN users ON users.id = api_keys.user_id
+               ORDER BY api_keys.created_at DESC, api_keys.id DESC"""
+        ).fetchall()
+        contracts = connection.execute(
+            """SELECT api_key_contracts.api_key_id, contracts.contract_number
+               FROM api_key_contracts JOIN contracts ON contracts.id = api_key_contracts.contract_id
+               ORDER BY contracts.contract_number"""
+        ).fetchall()
+    scopes = defaultdict(list)
+    for contract in contracts:
+        scopes[contract["api_key_id"]].append(contract["contract_number"])
+    items = []
+    for key in keys:
+        item = dict(key)
+        item["contracts"] = scopes[key["id"]]
+        item["status"] = "active"
+        item["status_label"] = "Aktiv"
+        if key["revoked_at"]:
+            item.update(status="inactive", status_label="Widerrufen")
+        elif key["expires_at"] and datetime.fromisoformat(key["expires_at"]) <= datetime.now(timezone.utc):
+            item.update(status="inactive", status_label="Abgelaufen")
+        elif key["user_id"] is not None and not key["user_active"]:
+            item.update(status="inactive", status_label="Benutzer inaktiv")
+        elif not item["contracts"]:
+            item.update(status="inactive", status_label="Keine Vertraege")
+        items.append(item)
+    return {"keys": items, "csrf_token": api_key_csrf_token(user)}
+
+
+@app.get("/api-keys")
+def api_keys_index(request: Request, saved: bool = Query(False), user: dict[str, Any] = Depends(require_superadmin)):
+    return render(request, "api_keys.html", {**api_key_list_context(user), "saved": saved})
+
+
+@app.get("/api-keys/new")
+def api_key_new(request: Request, user: dict[str, Any] = Depends(require_superadmin)):
+    return render(request, "api_key_form.html", api_key_form_context(user))
+
+
+@app.get("/api-keys/{key_id}/edit")
+def edit_api_key(request: Request, key_id: int, user: dict[str, Any] = Depends(require_superadmin)):
+    return render(request, "api_key_form.html", api_key_edit_context(user, key_id))
+
+
+@app.post("/api-keys/{key_id}/update")
+def update_api_key(
+    request: Request,
+    key_id: int,
+    name: str = Form(...),
+    contract_ids: list[int] = Form([]),
+    expires_on: str = Form(""),
+    csrf_token: str = Form(...),
+    user: dict[str, Any] = Depends(require_superadmin),
+):
+    validate_api_key_csrf(csrf_token, user)
+    context = api_key_edit_context(user, key_id)
+    context["values"] = {"name": name, "expires_on": expires_on, "contract_ids": contract_ids}
+    try:
+        name = required_text(name, "Bezeichnung")
+        if len(name) > 120:
+            raise ValueError("Bezeichnung darf maximal 120 Zeichen enthalten.")
+        contract_ids = sorted(set(contract_ids))
+        with database.connect() as connection:
+            # Use the same lock as API requests: a request sees either the old or the new grants.
+            lock = " FOR UPDATE" if database.IS_POSTGRES else ""
+            key = connection.execute(
+                "SELECT expires_at, revoked_at FROM api_keys WHERE id = ?" + lock, (key_id,),
+            ).fetchone()
+            if key is None:
+                raise HTTPException(status_code=404, detail="API-Schluessel nicht gefunden.")
+            if key["revoked_at"]:
+                raise HTTPException(status_code=409, detail="Widerrufene API-Schluessel koennen nicht bearbeitet werden.")
+            valid_ids = {row["id"] for row in connection.execute("SELECT id FROM contracts").fetchall()}
+            if not set(contract_ids).issubset(valid_ids):
+                raise ValueError("Bitte nur gueltige Vertraege freigeben.")
+            expires_at = (key["expires_at"] if expires_on == api_key_expiry_date(key["expires_at"])
+                          else parse_api_key_expiry(expires_on))
+            connection.execute("UPDATE api_keys SET name = ?, expires_at = ? WHERE id = ?", (name, expires_at, key_id))
+            connection.execute("DELETE FROM api_key_contracts WHERE api_key_id = ?", (key_id,))
+            if contract_ids:
+                connection.executemany(
+                    "INSERT INTO api_key_contracts (api_key_id, contract_id) VALUES (?, ?)",
+                    [(key_id, contract_id) for contract_id in contract_ids],
+                )
+    except (ValueError, OverflowError) as exc:
+        return render(request, "api_key_form.html", {**context, "error": str(exc)}, status_code=400)
+    return redirect_to("/api-keys?saved=true")
+
+
+@app.post("/api-keys")
+def create_api_key(
+    request: Request,
+    name: str = Form(...),
+    user_id: int | None = Form(None),
+    owner_type: str = Form("account"),
+    booking_name: str = Form(""),
+    contract_ids: list[int] = Form([]),
+    expires_on: str = Form(""),
+    csrf_token: str = Form(...),
+    user: dict[str, Any] = Depends(require_superadmin),
+):
+    validate_api_key_csrf(csrf_token, user)
+    context = api_key_form_context(user)
+    context["values"] = {"name": name, "user_id": user_id, "owner_type": owner_type,
+                         "booking_name": booking_name, "expires_on": expires_on, "contract_ids": contract_ids}
+    try:
+        name = required_text(name, "Bezeichnung")
+        if len(name) > 120:
+            raise ValueError("Bezeichnung darf maximal 120 Zeichen enthalten.")
+        if owner_type == "account":
+            if user_id not in {item["id"] for item in context["booking_users"]}:
+                raise ValueError("Bitte einen aktiven Benutzer mit Buchungsberechtigung auswaehlen.")
+            booking_name = None
+        elif owner_type == "external":
+            booking_name = required_text(booking_name, "Name des buchenden Benutzers")
+            if len(booking_name) > 250:
+                raise ValueError("Der Name darf maximal 250 Zeichen enthalten.")
+            user_id = None
+        else:
+            raise ValueError("Bitte eine gueltige Benutzerzuordnung auswaehlen.")
+        contract_ids = sorted(set(contract_ids))
+        if not contract_ids or not set(contract_ids).issubset({item["id"] for item in context["contracts"]}):
+            raise ValueError("Bitte mindestens einen gueltigen Vertrag freigeben.")
+        expires_at = parse_api_key_expiry(expires_on)
+    except (ValueError, OverflowError) as exc:
+        return render(request, "api_key_form.html", {**context, "error": str(exc)}, status_code=400)
+    raw_key = booking_api.generate_api_key()
+    with database.connect() as connection:
+        result = connection.execute(
+            """INSERT INTO api_keys (name, key_hash, key_prefix, user_id, booking_name, created_by, created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, booking_api.hash_api_key(raw_key), raw_key[:12], user_id, booking_name, user["id"], now_iso(), expires_at),
+        )
+        connection.executemany(
+            "INSERT INTO api_key_contracts (api_key_id, contract_id) VALUES (?, ?)",
+            [(result.lastrowid, contract_id) for contract_id in contract_ids],
+        )
+    return render(request, "api_keys.html", {**api_key_list_context(user), "new_key": raw_key})
+
+
+@app.post("/api-keys/{key_id}/revoke")
+def revoke_api_key(
+    key_id: int,
+    csrf_token: str = Form(...),
+    user: dict[str, Any] = Depends(require_superadmin),
+):
+    validate_api_key_csrf(csrf_token, user)
+    with database.connect() as connection:
+        if not connection.execute("SELECT id FROM api_keys WHERE id = ?", (key_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="API-Schluessel nicht gefunden.")
+        connection.execute(
+            "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+            (now_iso(), key_id),
+        )
+    return redirect_to("/api-keys")
+
+
+app.include_router(booking_api.create_router(app_settings))
+app.include_router(backups.create_router(render, require_superadmin))
+
+
 @app.get("/users")
 def users_index(request: Request, _: dict[str, Any] = Depends(require_permission("users.manage"))):
     return render(request, "users.html", user_management_context())
@@ -9770,8 +10072,9 @@ def delete_user(
                 (SELECT COUNT(*) FROM service_time_entries WHERE user_id = ?)
                 + (SELECT COUNT(*) FROM invoices WHERE created_by = ?)
                 + (SELECT COUNT(*) FROM flat_fees WHERE approved_by = ?)
+                + (SELECT COUNT(*) FROM api_keys WHERE user_id = ? OR created_by = ?)
             """,
-            (user_id, user_id, user_id),
+            (user_id, user_id, user_id, user_id, user_id),
         ).fetchone()[0]
         if reference_count:
             connection.execute(

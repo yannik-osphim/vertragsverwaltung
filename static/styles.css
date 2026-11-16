@@ -1751,6 +1751,21 @@ th {
   text-transform: uppercase;
 }
 
+.api-key-form {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.api-key-form .form-section {
+  min-width: 0;
+}
+
+.api-key-form input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+}
+
 .required-marker {
   color: var(--danger);
   font-weight: 900;

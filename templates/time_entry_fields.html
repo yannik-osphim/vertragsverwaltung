@@ -1,0 +1,96 @@
+{% set values = entry|default({}) %}
+{% set selected_contract_id = values.get('contract_id', contracts[0].id if contracts else none) %}
+{% set available_items = work_items|selectattr('contract_id', 'equalto', selected_contract_id)|list %}
+{% set selected_items = available_items|selectattr('key', 'equalto', values.get('work_item_key', ''))|list %}
+{% set selected_item = selected_items[0] if selected_items else (available_items[0] if available_items else none) %}
+{% macro work_item_details(item) %}
+  <span class="booking-kind">{{ item.label }}</span>
+  <h3>{{ item.name }}</h3>
+  <p class="booking-reference-company">{{ item.company_name }} &middot; {{ item.contract_number }}</p>
+  <h4>Beschreibung laut Vertrag</h4>
+  {% if item.notes %}
+  <div class="rich-text-content booking-service-description">{{ item.notes | rich_text }}</div>
+  {% else %}
+  <p class="muted">F&uuml;r diese Leistung ist keine Beschreibung hinterlegt.</p>
+  {% endif %}
+{% endmacro %}
+
+<form class="time-booking-form" method="post" action="{{ form_action }}"
+      data-work-unit="{{ settings.billing_rate_unit }}" data-workday-hours="{{ settings.workday_hours }}">
+  {% if not is_edit %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
+  <section class="booking-section booking-assignment" aria-labelledby="booking-assignment-title">
+    <h2 id="booking-assignment-title">Zuordnung</h2>
+    <label>
+      <span>Vertrag <b class="required-marker">*</b></span>
+      <select id="booking-contract" name="contract_id" data-searchable="true" data-label="Vertrag" required>
+        {% for contract in contracts %}
+        <option value="{{ contract.id }}" {% if contract.id == selected_contract_id %}selected{% endif %}>{{ contract.company_name }} &middot; {{ contract.contract_number }}</option>
+        {% else %}<option value="">Keine Vertr&auml;ge vorhanden</option>{% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Dienstleistung / Arbeitspaket <b class="required-marker">*</b></span>
+      <select id="booking-work-item" name="work_item_key" data-filter-contract-select="contract_id"
+              data-label="Dienstleistung / Arbeitspaket" data-empty-label="Keine buchbaren Leistungen" required>
+        {% for item in work_items %}
+        <option value="{{ item.key }}" data-contract-id="{{ item.contract_id }}"
+                data-option-description="{{ item.notes|striptags|truncate(180) if item.notes else item.label }}"
+                {% if selected_item and selected_item.key == item.key %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="booking-empty" data-booking-empty {% if selected_item %}hidden{% endif %}>Diesem Vertrag sind keine buchbaren Dienstleistungen oder Arbeitspakete zugeordnet.</p>
+  </section>
+
+  <aside class="booking-reference" aria-labelledby="booking-reference-title">
+    <h2 id="booking-reference-title">Leistung im Vertrag</h2>
+    <div data-work-item-detail aria-live="polite" aria-atomic="true">
+      {% if selected_item %}{{ work_item_details(selected_item) }}{% else %}<p class="muted">Keine Leistung ausgew&auml;hlt.</p>{% endif %}
+    </div>
+  </aside>
+
+  <section class="booking-section booking-timing" aria-labelledby="booking-timing-title">
+    <h2 id="booking-timing-title">Zeitraum &amp; Aufwand</h2>
+    <div class="booking-date-grid">
+      <label><span>Startdatum <b class="required-marker">*</b></span><input name="start_date" type="date" value="{{ values.get('start_date') or values.get('work_date') or today }}" required></label>
+      <label><span>Enddatum <b class="required-marker">*</b></span><input name="end_date" type="date" value="{{ values.get('end_date') or values.get('work_date') or today }}" required></label>
+    </div>
+    <div class="booking-amount-grid">
+      <label>
+        <span>{{ work_unit_label }} gesamt <b class="required-marker">*</b></span>
+        <div class="booking-amount-control">
+          <input name="hours" inputmode="decimal" autocomplete="off" placeholder="0,00" required aria-describedby="booking-conversion"
+                 value="{{ values.hours_input if 'hours_input' in values else (values.hours|work_amount_input if values.get('hours') is not none else '') }}">
+          <span aria-hidden="true">{{ 'AT' if settings.billing_rate_unit == 'day' else 'h' }}</span>
+        </div>
+      </label>
+      <div class="booking-conversion" id="booking-conversion" aria-live="polite">
+        <strong data-work-equivalent>&ndash;</strong>
+        <span>1 Arbeitstag = {{ hours_per_workday }} Stunden</span>
+      </div>
+    </div>
+    {% if is_edit %}
+    <label class="booking-status"><span>Status</span><select name="status">
+      {% for item_status in time_entry_statuses %}<option value="{{ item_status }}" {% if values.status == item_status %}selected{% endif %}>{{ item_status|status_label }}</option>{% endfor %}
+    </select></label>
+    {% endif %}
+  </section>
+
+  <section class="booking-section booking-activity" aria-labelledby="booking-activity-title">
+    <h2 id="booking-activity-title">T&auml;tigkeit</h2>
+    <label for="booking-description"><span>Beschreibung der geleisteten Arbeit <span class="booking-optional">Optional</span></span></label>
+    <textarea id="booking-description" name="description" rows="5" aria-label="Beschreibung der geleisteten Arbeit"
+              placeholder="Was wurde in diesem Zeitraum erledigt?">{{ values.get('description', '') }}</textarea>
+  </section>
+
+  <footer class="booking-footer">
+    <div class="booking-total"><span>Gesamtaufwand</span><strong data-work-total>&ndash;</strong></div>
+    <div class="booking-footer-actions">
+      <a class="button subtle" href="{{ cancel_url }}">Abbrechen</a>
+      <button class="button primary" type="submit" data-booking-submit {% if not selected_item %}disabled{% endif %}>{{ 'Aenderungen speichern' if is_edit else 'Aufwand speichern' }}</button>
+    </div>
+  </footer>
+  {% for item in work_items %}
+  <template data-work-item="{{ item.key }}" data-contract-id="{{ item.contract_id }}">{{ work_item_details(item) }}</template>
+  {% endfor %}
+</form>

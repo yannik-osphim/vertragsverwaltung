@@ -60,6 +60,9 @@ def table_counts(connection) -> dict[str, int]:
 def clear_sample_data() -> dict[str, object]:
     with database.connect() as connection:
         before = table_counts(connection)
+        connection.execute("DELETE FROM api_booking_requests")
+        connection.execute("DELETE FROM api_key_contracts")
+        connection.execute("UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE revoked_at IS NULL")
         connection.execute("DELETE FROM invoice_time_entries")
         connection.execute("UPDATE service_time_entries SET invoice_id = NULL")
         connection.execute("DELETE FROM service_time_entries")

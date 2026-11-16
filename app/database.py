@@ -114,6 +114,39 @@ class Company(SQLModel, table=True):
     updated_at: str = Field(nullable=False)
 
 
+class ApiKey(SQLModel, table=True):
+    __tablename__ = "api_keys"
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(nullable=False)
+    key_hash: str = Field(unique=True, nullable=False)
+    key_prefix: str = Field(nullable=False)
+    user_id: int | None = Field(default=None)
+    booking_name: str | None = Field(default=None)
+    created_by: int = Field(nullable=False)
+    created_at: str = Field(nullable=False)
+    expires_at: str | None = Field(default=None)
+    last_used_at: str | None = Field(default=None)
+    revoked_at: str | None = Field(default=None)
+
+
+class ApiKeyContract(SQLModel, table=True):
+    __tablename__ = "api_key_contracts"
+
+    api_key_id: int = Field(primary_key=True)
+    contract_id: int = Field(primary_key=True)
+
+
+class ApiBookingRequest(SQLModel, table=True):
+    __tablename__ = "api_booking_requests"
+
+    api_key_id: int = Field(primary_key=True)
+    request_id: str = Field(primary_key=True)
+    request_hash: str = Field(nullable=False)
+    time_entry_id: int = Field(nullable=False)
+    response_json: str = Field(nullable=False)
+
+
 class Contract(SQLModel, table=True):
     __tablename__ = "contracts"
 
@@ -271,7 +304,9 @@ class ServiceTimeEntry(SQLModel, table=True):
     contract_id: int = Field(nullable=False)
     service_id: int | None = Field(default=None)
     flat_fee_id: int | None = Field(default=None)
-    user_id: int = Field(nullable=False)
+    user_id: int | None = Field(default=None)
+    booking_name: str | None = Field(default=None)
+    booking_source: str | None = Field(default=None)
     work_date: str = Field(nullable=False)
     start_date: str | None = Field(default=None)
     end_date: str | None = Field(default=None)
@@ -393,6 +428,7 @@ class AppSetting(SQLModel, table=True):
 
 
 ID_TABLES = {
+    "api_keys",
     "roles",
     "permissions",
     "users",
@@ -710,6 +746,25 @@ def migrate_license_quantity_to_decimal(connection: Connection) -> None:
 
 
 def migrate_schema(connection: Connection) -> None:
+    add_column_if_missing(connection, "api_keys", "booking_name", "TEXT")
+    add_column_if_missing(connection, "service_time_entries", "booking_name", "TEXT")
+    add_column_if_missing(connection, "service_time_entries", "booking_source", "TEXT")
+    # Only backfill API origins that can be proven; older account bookings may be ambiguous.
+    connection.execute(
+        """
+        UPDATE service_time_entries
+        SET booking_source = 'api'
+        WHERE booking_source IS NULL AND (
+            (user_id IS NULL AND NULLIF(TRIM(booking_name), '') IS NOT NULL)
+            OR EXISTS (
+                SELECT 1 FROM api_booking_requests
+                WHERE api_booking_requests.time_entry_id = service_time_entries.id
+            )
+        )
+        """
+    )
+    drop_not_null_if_postgres(connection, "api_keys", "user_id")
+    drop_not_null_if_postgres(connection, "service_time_entries", "user_id")
     add_column_if_missing(connection, "companies", "contact_name", "TEXT NOT NULL DEFAULT ''")
     add_column_if_missing(connection, "companies", "contact_email", "TEXT NOT NULL DEFAULT ''")
     add_column_if_missing(connection, "companies", "contact_phone", "TEXT NOT NULL DEFAULT ''")

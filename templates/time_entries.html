@@ -1,59 +1,61 @@
 {% extends "base.html" %}
 {% block title %}Stunden - Vertragsverwaltung{% endblock %}
 {% block content %}
-<section class="page-heading">
+<section class="page-heading time-overview-heading">
   <div>
-    <p class="eyebrow">Leistungen</p>
+    <p class="eyebrow">Zeiterfassung</p>
     <h1>Stundenbuchungen</h1>
   </div>
-  <a class="button primary" href="/time-entries/new">Aufwand erfassen</a>
+  <a class="button primary" href="/time-entries/new"><span class="table-icon icon-plus" aria-hidden="true"></span>Aufwand erfassen</a>
 </section>
 
-<section class="analytics-band">
-  <div class="section-title">
-    <h2>Stundenbuchungen</h2>
-  </div>
-  <div class="table-wrap">
-    <table>
+<section class="time-overview" aria-label="Stundenbuchungen">
+  <div class="table-wrap compact-table-wrap">
+    <table class="time-entries-table" data-table-ui="compact" data-column-filters="false" data-default-sort="0" data-default-direction="desc" data-search-label="Buchungen durchsuchen" data-empty-label="Keine Buchungen gefunden." aria-label="Stundenbuchungen">
+      <colgroup>
+        <col class="col-period"><col class="col-account"><col class="col-service">
+        <col class="col-user"><col class="col-effort"><col class="col-status"><col class="col-actions">
+      </colgroup>
       <thead>
         <tr>
           <th>Zeitraum</th>
-          <th>Unternehmen</th>
-          <th>Vertrag</th>
+          <th>Unternehmen / Vertrag</th>
           <th>Leistung</th>
           <th>Benutzer</th>
-          <th>Aufwand</th>
-          <th>Beschreibung</th>
+          <th class="numeric">Aufwand</th>
           <th>Status</th>
-          <th>Aktion</th>
+          <th data-sortable="false"><span class="compact-sr-only">Aktionen</span></th>
         </tr>
       </thead>
       <tbody>
         {% for entry in entries %}
-        <tr>
-          <td>{{ (entry.start_date or entry.work_date) | date_de }} - {{ (entry.end_date or entry.work_date) | date_de }}</td>
-          <td>{{ entry.company_name }}</td>
-          <td><a href="/contracts/{{ entry.contract_id }}">{{ entry.contract_number }}</a></td>
-          <td>{{ entry.service_name }}<br><span class="muted">{{ entry.work_item_type }}</span></td>
-          <td>{{ entry.user_name }}</td>
-          <td>{{ entry.hours | work_quantity }}</td>
-          <td>
+        {% set start = entry.start_date or entry.work_date %}
+        {% set end = entry.end_date or entry.work_date %}
+        <tr data-status="{{ entry.status | status_label }}" data-kind="{{ entry.work_item_type }}" data-start="{{ start }}" data-end="{{ end }}" data-booking-source="{{ 'API' if entry.booking_source == 'api' else 'Web' if entry.booking_source == 'web' else 'Nicht erfasst' }}">
+          <td data-sort-value="{{ start }}">
+            <time datetime="{{ start }}">{{ start | date_de }}</time>
+            {% if end != start %}<span class="entry-secondary">bis <time datetime="{{ end }}">{{ end | date_de }}</time></span>{% endif %}
+          </td>
+          <td><span class="entry-primary">{{ entry.company_name }}</span><a class="entry-secondary" href="/contracts/{{ entry.contract_id }}">{{ entry.contract_number }}</a></td>
+          <td data-sort-value="{{ entry.service_name }}">
+            <span class="entry-primary">{{ entry.service_name }}</span>
+            <span class="entry-secondary muted">{{ entry.work_item_type }}</span>
             {% if entry.description %}
-            <details class="table-details">
-              <summary>Anzeigen</summary>
+            <details class="table-details entry-description">
+              <summary>Beschreibung</summary>
               <div class="rich-text-content compact">{{ entry.description | rich_text }}</div>
             </details>
-            {% else %}
-            -
             {% endif %}
           </td>
+          <td data-sort-value="{{ entry.user_name }}">{{ entry.user_name }}{% include "time_entry_source.html" %}</td>
+          <td class="numeric entry-effort" data-sort-value="{{ entry.hours }}" data-sort-type="number">{{ entry.hours | work_quantity }}</td>
           <td><span class="status {{ entry.status }}">{{ entry.status | status_label }}</span></td>
           <td class="action-cell">
             {% if entry.invoice_id or entry.has_invoice_link %}
-            <span class="muted">Gesperrt</span>
+            <span class="entry-locked" title="Bereits einer Rechnung zugeordnet" aria-label="Gesperrt: bereits einer Rechnung zugeordnet"><span class="table-icon icon-lock" aria-hidden="true"></span></span>
             {% else %}
             <details class="row-action-menu">
-              <summary class="row-action-trigger" aria-label="Aktionen" title="Aktionen">...</summary>
+              <summary class="row-action-trigger" aria-label="Aktionen zur Buchung" title="Aktionen zur Buchung"><span class="table-icon icon-more" aria-hidden="true"></span></summary>
               <div class="row-action-list">
                 <a class="button secondary" href="/time-entries/{{ entry.id }}/edit">Bearbeiten</a>
                 {% if entry.status == 'submitted' %}
@@ -70,7 +72,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="9" class="empty">Noch keine Stundenbuchungen vorhanden.</td></tr>
+        <tr><td colspan="7" class="empty">Noch keine Stundenbuchungen vorhanden.</td></tr>
         {% endfor %}
       </tbody>
     </table>

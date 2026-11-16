@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Backups - Vertragsverwaltung{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/backups.css?v=1">{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">Verwaltung</p><h1>Backups</h1></div>
+  <div class="page-actions">
+    <a class="compact-icon-button" href="/backups" title="Aktualisieren" aria-label="Aktualisieren"><span class="table-icon icon-reset" aria-hidden="true"></span></a>
+    <form method="post" action="/backups/run">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button primary" type="submit" {% if not worker_online or busy or storage_error %}disabled{% endif %}>Jetzt sichern</button>
+    </form>
+  </div>
+</section>
+{% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
+{% if saved %}<div class="alert success" role="status">Backup-Einstellungen gespeichert.</div>{% endif %}
+{% if storage_error %}<div class="alert" role="alert">{{ storage_error }}</div>{% endif %}
+<dl class="backup-summary" data-backup-watch="{{ '1' if busy else '0' }}">
+  <div><dt>Backup-Dienst</dt><dd><span class="status {{ 'active' if worker_online and worker.status != 'failed' else 'overdue' }}">{{ worker_label }}</span></dd><small>Letzte Meldung: {{ heartbeat_label }}</small></div>
+  <div><dt>Letzte Sicherung</dt><dd>{{ latest }}</dd><small>Europe/Berlin</small></div>
+  <div><dt>Naechste Sicherung</dt><dd>{{ next_due }}</dd><small>{{ 'Automatik aktiv' if backup_config.enabled else 'Automatik pausiert' }}</small></div>
+  <div><dt>Gespeichert</dt><dd>{{ total_size }}</dd><small>{{ snapshots | length }} Sicherungen</small></div>
+</dl>
+{% if backup_request %}<p class="backup-request" role="status">Letzte manuelle Anforderung: <strong>{{ request_label }}</strong></p>{% endif %}
+<section class="analytics-band backup-list">
+  <div class="section-title"><h2>Sicherungen</h2><span class="muted">PostgreSQL, Dokumente und Logos</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Erstellt (Berlin)</th><th>Sicherung</th><th>Groesse</th><th>Pruefung bei Erstellung</th><th>Aktionen</th></tr></thead>
+      <tbody>
+        {% for snapshot in snapshots %}
+        <tr>
+          <td data-sort-value="{{ snapshot.completed }}" data-sort-type="number">{{ snapshot.created }}</td>
+          <td><span class="backup-name">{{ snapshot.name }}</span></td>
+          <td data-sort-value="{{ snapshot.bytes }}" data-sort-type="number">{{ snapshot.size }}</td>
+          <td><span class="status active">Erfolgreich</span></td>
+          <td class="action-cell">
+            <details class="row-action-menu"><summary class="row-action-trigger" aria-label="Downloads fuer {{ snapshot.created }}">...</summary>
+              <div class="row-action-list">{% for filename, label in download_files.items() %}<a class="button secondary" href="/backups/{{ snapshot.name }}/files/{{ filename }}">{{ label }}</a>{% endfor %}</div>
+            </details>
+          </td>
+        </tr>
+        {% else %}<tr><td colspan="5" class="empty">Noch keine Sicherungen vorhanden.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<form class="form-grid sectioned-form backup-settings" method="post" action="/backups/settings" data-current-retention="{{ backup_config.retention_days }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="form-section span-full">
+    <h2 class="form-section-title">Zeitplan und Aufbewahrung</h2>
+    <label class="backup-toggle"><input type="checkbox" name="enabled" value="1" {% if form.enabled | string == '1' %}checked{% endif %} {% if not managed %}disabled{% endif %}><span>Automatische Sicherungen</span></label>
+    <div class="form-section-grid">
+      <label><span>Intervall (Stunden) *</span><input name="interval_hours" type="number" min="1" max="168" step="1" value="{{ form.interval_hours | int if not error else form.interval_hours }}" required></label>
+      <label><span>Aufbewahrung (Tage) *</span><input name="retention_days" type="number" min="1" max="365" step="1" value="{{ form.retention_days }}" required></label>
+      <label><span>Wiederholung nach Fehler (Minuten) *</span><input name="retry_minutes" type="number" min="1" max="1440" step="1" value="{{ form.retry_minutes | int if not error else form.retry_minutes }}" required></label>
+      <label><span>Zeitlimit je Sicherungsschritt (Minuten) *</span><input name="timeout_minutes" type="number" min="1" max="1440" step="1" value="{{ form.timeout_minutes | int if not error else form.timeout_minutes }}" required></label>
+    </div>
+  </section>
+  <div class="form-actions span-full"><button class="button primary" type="submit" {% if not managed %}disabled{% endif %}>Einstellungen speichern</button></div>
+</form>
+<section class="backup-storage">
+  <h2>Speicherort</h2><p>Lokales Docker-Volume <code>db_backups</code></p>
+  <p class="muted">Keine externe Sicherung. Bei Verlust des Hosts oder Loeschung des Volumes gehen auch die Backups verloren. Zugangsschluessel, <code>.env</code> und Zertifikate sind nicht enthalten.</p>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/backups.js?v=1" defer></script>{% endblock %}

@@ -45,10 +45,18 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       ENABLE_SAMPLE_DATA: ${ENABLE_SAMPLE_DATA:-0}
+      BACKUP_MANAGEMENT_ENABLED: "1"
+      BACKUP_DIR: /backups
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-1}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-300}
+      BACKUP_TIMEOUT_SECONDS: ${BACKUP_TIMEOUT_SECONDS:-3600}
     expose:
       - "8000"
     volumes:
       - app_data:/app/data
+      - db_backups:/backups:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()\""]
       interval: 30s
@@ -86,6 +94,15 @@ services:
     image: postgres:16
     restart: unless-stopped
     init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    group_add:
+      - "1000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,17 +110,26 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-contracts}
       POSTGRES_USER: ${POSTGRES_USER:-user}
       PGPASSWORD: ${POSTGRES_PASSWORD:-password}
+      BACKUP_MANAGEMENT_ENABLED: "1"
+      BACKUP_READ_GID: "1000"
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-1}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-300}
+      BACKUP_TIMEOUT_SECONDS: ${BACKUP_TIMEOUT_SECONDS:-3600}
     volumes:
       - db_backups:/backups
-    command: >
-      sh -c "mkdir -p /backups;
-      while true; do
-        pg_dump -h postgres -U \"${POSTGRES_USER:-user}\" -d \"${POSTGRES_DB:-contracts}\" -Fc -f \"/backups/${POSTGRES_DB:-contracts}_`date +%Y%m%d_%H%M%S`.dump\";
-        find /backups -type f -name '*.dump' -mtime +${BACKUP_RETENTION_DAYS:-14} -delete;
-        sleep ${BACKUP_INTERVAL_SECONDS:-86400};
-      done"
+      - app_data:/app-data:ro
+      - ./scripts/backup.sh:/opt/backup.sh:ro
+      - ./scripts/backup-control.sh:/opt/backup-control.sh:ro
+    entrypoint: ["/bin/bash", "/opt/backup.sh"]
+    command: ["schedule"]
+    healthcheck:
+      test: ["CMD", "/bin/bash", "/opt/backup.sh", "healthcheck"]
+      interval: 5m
+      timeout: 10s
+      retries: 2
+      start_period: 10m
 
 volumes:
   postgres_data:

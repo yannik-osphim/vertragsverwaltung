@@ -45,6 +45,12 @@
         ],
       },
     });
+    var fieldLabel = textarea.getAttribute("aria-label") || (textarea.labels[0] && textarea.labels[0].textContent.trim());
+    if (fieldLabel) {
+      quill.root.setAttribute("role", "textbox");
+      quill.root.setAttribute("aria-label", fieldLabel);
+      quill.root.setAttribute("aria-multiline", "true");
+    }
 
     if (textarea.value) {
       if (hasRichMarkup(textarea.value)) {

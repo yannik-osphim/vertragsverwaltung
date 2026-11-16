@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${FAKE_PGDUMP_FAIL:-0}" == 0 ]] || exit 1
+for argument in "$@"; do
+    if [[ "$argument" == --file=* ]]; then
+        if [[ "${FAKE_BAD_DUMP:-0}" == 1 ]]; then
+            printf 'corrupt\n' > "${argument#--file=}"
+        else
+            printf 'test-database\n' > "${argument#--file=}"
+        fi
+    fi
+done
